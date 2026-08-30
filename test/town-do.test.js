@@ -69,19 +69,22 @@ test("the town object initializes the current persistent Rookwood", async () => 
   assert.equal(state.locations.length, 14);
   assert.equal(state.relationships.length, 27);
   assert.equal(state.obligations.length, 1);
+  assert.equal(state.residents.find(({ id }) => id === "mara").name, "Mara Konstantinidis");
+  assert.equal(state.obligations[0].title, "Jamie's sealed notice");
   assert.equal(state.stats.eventCount, 1);
   assert.equal(storage.sql.eventRows.size, 1);
   assert.ok(storage.alarmAt > Date.now());
 });
 
-test("an existing ten-person projection reconciles without replacing evolved state", async () => {
+test("an existing ten-person projection reconciles and renames without replacing evolved state", async () => {
   const { town, storage } = makeTown();
   const old = createInitialTown();
   old.residents = old.residents.slice(0, 10);
   old.locations = old.locations.slice(0, 11);
   old.relationships = old.relationships.slice(0, 12);
   delete old.obligations;
-  old.seedRevision = 1;
+  old.seedRevision = 3;
+  old.residents[0].name = "Mara Venn";
   old.residents[0].energy = 41;
   delete old.residents[0].dailyPlan;
   delete old.residents[0].lastEncounterAt;
@@ -93,13 +96,16 @@ test("an existing ten-person projection reconciles without replacing evolved sta
 
   const response = await town.fetch(new Request("https://town.internal/state"));
   const state = await response.json();
+  const mara = state.residents.find(({ id }) => id === "mara");
 
   assert.equal(state.residents.length, 15);
   assert.equal(state.locations.length, 14);
   assert.equal(state.relationships.length, 27);
   assert.equal(state.obligations.length, 1);
-  assert.equal(state.residents.find(({ id }) => id === "mara").energy, 41);
-  assert.equal(state.residents.find(({ id }) => id === "mara").socialCount, 0);
+  assert.equal(mara.name, "Mara Konstantinidis");
+  assert.equal(mara.energy, 41);
+  assert.equal(mara.socialCount, 0);
+  assert.equal(state.obligations[0].title, "Jamie's sealed notice");
   assert.ok(state.residents.some(({ id }) => id === "edda"));
   assert.equal(state.stats.eventCount, 2);
   assert.equal(storage.sql.eventRows.size, 2);
