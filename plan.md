@@ -19,6 +19,8 @@ daily planner → structured plan → validator → deterministic executor → e
 
 Ordinary code owns the world. It handles time, resources, inventory, legality, schedules, transactions, needs, and consequences. A model may help a resident decide what matters, but it must not become the authority on what actually happened.
 
+For the first persistent town, use one SQLite-backed Durable Object named for the town, such as `rookwood`. It should be the single coordinator for the world clock, state projection, event log, and scheduled wake-ups. This is one object for the town, not one object per resident. D1 remains an optional shared SQL layer for later cross-town queries, analytics, administration, or reporting.
+
 ## Daily planner contract
 
 The eventual model adapter should make at most one call per resident per simulated day. That is a budget ceiling, not a requirement to call residents who have nothing meaningful to reconsider. Calls should remain staggered and subject to the existing off-peak policy.
@@ -53,9 +55,11 @@ A resident's statement should remain that resident's statement. It should not si
 
 Keep expanding the ordinary rules and event types while preserving replayability, bounded state, and readable dashboard output.
 
-### 2. Add durability
+### 2. Make one town persistent
 
-Persist the event log and current state projection in D1. Add one coordinator heartbeat with leases, checkpoints, retries, and an explicit simulation clock. Keep world rules outside the request handler.
+Move one town into a SQLite-backed Durable Object. Persist the event log and current state projection there, and use an alarm to wake the object for the next meaningful simulation step. Route all state-changing work through that town object so scheduled work, dashboard requests, and future controls are serialized. Add checkpoints, retries, and an explicit simulation clock. Keep world rules in the domain layer, outside the public request handler.
+
+Do not add D1 merely because it is a database. Introduce it when the project has a real need for shared relational queries beyond one town object.
 
 ### 3. Introduce a daily-plan interface
 
