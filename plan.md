@@ -26,6 +26,7 @@ Success means a fresh staging Calder Station can run for 90 simulated days, prod
 - The corrected persistent staging Worker completed 24 genuine `deepseek-v4-flash` calls: 24 valid plans, zero fallbacks, 22,038 prompt tokens, 1,120 completion tokens, and about $0.004197 estimated spend. DeepSeek chose fulfillment in all 24 cases, including exhausted, hungry, low-trust, distant-deadline, and competing-route states; three hungry selections were then interrupted and remained open. The provider boundary works, but the decision problem is still theater.
 - DeepSeek's authority is now choice-only: `{obligationId, choice, note}`. It may choose among bounded open commitments when they genuinely compete, while deterministic code composes Sal's full legal day and leaves unattended commitments subject to their deadlines.
 - Model eligibility now requires at least two commitments due before Sal's next daily turn and excludes hard-need states where code already knows the answer. The revised prompt exposes exact deadlines, relationship/tension effects, and civic-chain consequences; the v5 matrix advances through expiry so each choice visibly fulfills one promise and breaks another.
+- The v5 genuine matrix completed 24/24 valid calls with zero fallback, 34,977 prompt tokens, 1,108 completion tokens, and about $0.007363 spend. It selected the earlier deadline in every case and ignored large trust/tension reversals. Several notes correctly inferred that both jobs should fit later the same morning; the one-action evaluator, not the simulated world, manufactured the loss.
 - Persistent history now orders by durable insertion rather than lexical IDs and repairs a stale projection event sequence from SQLite, covering the first concrete year-scale log defect found in the operations audit.
 - `main` now automatically deploys disposable staging after the test gate; production remains manual. This removes the recurring evaluation bottleneck without allowing code pushes to touch canonical production state.
 - The Folio now names the specific commitment chosen by DeepSeek or fallback rules, shows the bounded decision note, and traces follow-up journal entries back to the prior promise without exposing engineering counters.
@@ -42,8 +43,8 @@ The action queue is intentionally finite: each plan has at most five actions, ea
 
 ## Next useful work
 
-1. Stop spending model calls on a single obvious commitment; reserve them for genuinely competing legal commitments.
-2. Expose the deterministic deadline, relationship, and downstream consequences of each offered choice, then repeat the paid matrix against conflict states.
+1. Add bounded travel and service time, queue every feasible due commitment, and calculate whether any ordering can meet all deadlines.
+2. Call the model only when deterministic feasibility proves at least one promise must be sacrificed; rebuild the matrix around those real conflicts.
 3. Run a bounded genuine model-assisted multi-day scenario through the same engine and compare its causal history with the scripted baseline.
 
 ## Deferred

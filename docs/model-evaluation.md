@@ -25,6 +25,25 @@ The result is useful evidence rather than success: the offered problem did not e
 
 The complete per-case report, including request IDs and cache-token splits, is retained in GitHub Actions run `33329054907`.
 
-## Next revision
+## `sal-consequential-conflict-v5-2026-08-30`
 
-`sal-consequential-conflict-v5-2026-08-30` removes paid calls for single commitments and hard-need cases. Its 24 cases all contain two commitments that will expire before the next planning turn. The prompt states concrete relationship deltas, current tension, deadlines, exposed work, and civic-chain effects; the scenario then runs long enough to observe one fulfillment and one broken commitment. Genuine results are pending the isolated staging deployment.
+The revised matrix removed single-commitment and hard-need calls. All 24 cases offered two commitments, explicit deterministic relationship/tension deltas, and civic consequences, then advanced far enough to observe both outcomes.
+
+| Measure | Result |
+| --- | ---: |
+| Real provider calls | 24 |
+| Valid model plans | 24 |
+| Fallbacks | 0 |
+| Prompt tokens | 34,977 |
+| Completion tokens | 1,108 |
+| Estimated spend | $0.007363 |
+| Notice selected | 15 |
+| Route report selected | 9 |
+| Selected commitment fulfilled | 24 |
+| Exposed commitment broken | 24 |
+
+The choices varied, but only with deadline order: DeepSeek selected the earlier deadline in all 24 cases. Reversing relationship strength from 24/88 to 88/24 or adding 30 tension did not overcome a four-hour deadline advantage. Several notes also claimed the second promise could be handled later that morning. Under the current instant-travel world and multi-action queue, that assumption is often reasonable; the evaluator created the broken promise by permitting only one obligation action.
+
+This is a world-model defect, not a prompt-tuning problem. Before another paid revision, deterministic code should model bounded travel/service time, queue every feasible commitment, and prove that no ordering can meet all deadlines. The model should choose priority only for a conflict the executor has established as physically impossible.
+
+The complete v5 report is retained in GitHub Actions run `33329611618`.
