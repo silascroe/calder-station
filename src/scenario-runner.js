@@ -487,6 +487,7 @@ export async function runScenario({
   tickMinutes = DAY_MINUTES,
   seedData = townSeed,
   decisionAdapter = scriptedObligationPlan,
+  prepareState = null,
 } = {}) {
   if (!Number.isInteger(days) || days < 1 || days > MAX_SCENARIO_DAYS) {
     throw new RangeError(`days must be an integer between 1 and ${MAX_SCENARIO_DAYS}`);
@@ -495,9 +496,14 @@ export async function runScenario({
     throw new RangeError("tickMinutes must divide a simulated day and be between 1 and 1440");
   }
   if (typeof decisionAdapter !== "function") throw new TypeError("decisionAdapter must be a function");
+  if (prepareState !== null && typeof prepareState !== "function") throw new TypeError("prepareState must be a function");
 
   const checkpointDays = normalizeCheckpoints(checkpoints, days);
   let state = createInitialTown({ seed, startTime, seedData, environment: "staging" });
+  if (prepareState) state = await prepareState(state) ?? state;
+  if (!state || !Array.isArray(state.residents) || !Array.isArray(state.locations)) {
+    throw new TypeError("prepareState must return a town state");
+  }
   state.mode = "staging-scenario";
   state.persistence = "scenario-memory";
   const initial = clone(state);

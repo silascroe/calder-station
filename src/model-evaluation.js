@@ -3,10 +3,11 @@ import { planResidentDecision } from "./hybrid-planner.js";
 import { materializeObligation } from "./obligations.js";
 import { isPeakPeriod } from "./scheduler.js";
 import { advanceTown, createInitialTown } from "./simulation.js";
+import { runScenario } from "./scenario-runner.js";
 
 const MINUTE_MS = 60 * 1000;
 
-export const MODEL_EVALUATION_REVISION = "sal-physical-conflict-v6-2026-08-30";
+export const MODEL_EVALUATION_REVISION = "sal-season-comparison-v7-2026-08-30";
 export const MODEL_EVALUATION_REPETITIONS = 3;
 export const MODEL_EVALUATION_CONCURRENCY = 3;
 
@@ -170,6 +171,128 @@ function countBy(values) {
   return counts;
 }
 
+function relationshipSnapshot(state, id) {
+  const relationship = state.relationships.find((candidate) => candidate.id === id);
+  return relationship ? {
+    id,
+    strength: relationship.strength,
+    tension: relationship.tension,
+    interactions: relationship.interactionCount,
+  } : null;
+}
+
+function prepareSeasonConflict(state) {
+  const sal = state.residents.find(({ id }) => id === "sal");
+  const planAt = new Date(sal.nextPlanAt);
+  const dueAt = new Date(planAt.getTime() + 60 * MINUTE_MS).toISOString();
+  const notice = state.obligations.find(({ id }) => id === "obligation-sal-vey-notice");
+  notice.dueAt = dueAt;
+  const route = materializeObligation({
+    id: "evaluation-season-route-report",
+    kind: "civic-request",
+    ownerId: "sal",
+    counterpartyId: "amos",
+    destinationId: "square",
+    requiredAction: "observe",
+    title: "Amos Foster's urgent route report",
+    description: "The closing round can proceed only if Sal checks the square within the hour.",
+    dueAt,
+    renewable: false,
+    seriesId: "civic-night-route",
+    civicChainId: "night-route",
+    civicStep: 0,
+    civicAttempt: 0,
+  }, state.now);
+  state.obligations.push(route);
+  state.stats.obligationCreatedCount += 1;
+  state.stats.civicObligationCreatedCount += 1;
+  const progress = state.civicIncidents.chains["night-route"];
+  progress.activeObligationId = route.id;
+  progress.nextAt = null;
+  return state;
+}
+
+function compactSeasonResult(run) {
+  const state = run.state;
+  const selected = state.events.find((event) => (
+    event.actorId === "sal"
+    && event.type === "obligation"
+    && ["model", "scripted"].includes(event.source)
+  )) ?? null;
+  return {
+    healthy: run.final.healthy,
+    events: run.final.longHorizon.eventDiversity.total,
+    obligations: run.final.obligations,
+    relationships: {
+      jamieSal: relationshipSnapshot(state, "rel-vey-sal"),
+      amosSal: relationshipSnapshot(state, "rel-amos-sal"),
+    },
+    nightRoute: { ...state.civicIncidents.chains["night-route"] },
+    model: { ...run.final.model },
+    selectedObligationId: selected?.obligationId ?? null,
+    selectedSource: selected?.source ?? null,
+    selectedNote: selected?.reason ?? null,
+    checkpoints: Object.fromEntries(Object.entries(run.checkpoints).map(([day, report]) => [day, {
+      events: report.longHorizon.eventDiversity.total,
+      fulfilled: report.obligations.fulfilled,
+      broken: report.obligations.broken,
+      open: report.obligations.open,
+      healthy: report.healthy,
+    }])),
+    causalEvents: state.events
+      .filter((event) => (
+        event.actorId === "sal"
+        && ["obligation", "obligation-created", "model-fallback"].includes(event.type)
+      ))
+      .slice(0, 12)
+      .map(({ id, at, type, text, reason, source, obligationId }) => ({ id, at, type, text, reason, source, obligationId })),
+  };
+}
+
+export async function runModelLongHorizonComparison({
+  env,
+  fetchImpl = env?.DEEPSEEK_FETCH ?? globalThis.fetch,
+  wallClock = new Date(),
+  days = 90,
+} = {}) {
+  if (!env?.DEEPSEEK_API_KEY) throw new Error("DEEPSEEK_API_KEY is required for paid model evaluation");
+  const checkpoints = [1, 7, 30, 90].filter((day) => day <= days);
+  if (!checkpoints.includes(days)) checkpoints.push(days);
+  const shared = {
+    days,
+    checkpoints,
+    seed: "calder-station-model-season",
+    prepareState: prepareSeasonConflict,
+  };
+  const baseline = await runScenario(shared);
+  const assisted = await runScenario({
+    ...shared,
+    decisionAdapter: (input) => planResidentDecision(input, {
+      env,
+      fetchImpl,
+      wallClock,
+      bypassPeakPricing: true,
+    }),
+  });
+  const compactBaseline = compactSeasonResult(baseline);
+  const compactAssisted = compactSeasonResult(assisted);
+  return {
+    kind: "calder-station-model-season-comparison",
+    days,
+    baseline: compactBaseline,
+    assisted: compactAssisted,
+    divergence: {
+      selectedObligationId: compactAssisted.selectedObligationId,
+      eventDelta: compactAssisted.events - compactBaseline.events,
+      fulfilledDelta: compactAssisted.obligations.fulfilled - compactBaseline.obligations.fulfilled,
+      brokenDelta: compactAssisted.obligations.broken - compactBaseline.obligations.broken,
+      jamieSalStrengthDelta: compactAssisted.relationships.jamieSal.strength - compactBaseline.relationships.jamieSal.strength,
+      amosSalStrengthDelta: compactAssisted.relationships.amosSal.strength - compactBaseline.relationships.amosSal.strength,
+    },
+    estimatedCostUsd: estimateDeepSeekCost(compactAssisted.model, wallClock),
+  };
+}
+
 async function mapWithConcurrency(items, concurrency, mapper) {
   const results = new Array(items.length);
   let nextIndex = 0;
@@ -191,6 +314,7 @@ export async function runModelEvaluation({
   revision = MODEL_EVALUATION_REVISION,
   repetitions = MODEL_EVALUATION_REPETITIONS,
   concurrency = MODEL_EVALUATION_CONCURRENCY,
+  includeLongHorizon = true,
 } = {}) {
   if (!env?.DEEPSEEK_API_KEY) throw new Error("DEEPSEEK_API_KEY is required for paid model evaluation");
   if (!Number.isInteger(repetitions) || repetitions < 1 || repetitions > 10) {
@@ -215,6 +339,18 @@ export async function runModelEvaluation({
   const promptTokens = results.reduce((total, result) => total + result.promptTokens, 0);
   const completionTokens = results.reduce((total, result) => total + result.completionTokens, 0);
   const estimatedCostUsd = results.reduce((total, result) => total + result.estimatedCostUsd, 0);
+  const longHorizon = includeLongHorizon
+    ? await runModelLongHorizonComparison({ env, fetchImpl, wallClock: requestedAt })
+    : null;
+  const longModel = longHorizon?.assisted?.model ?? {};
+  const totalCalls = results.length + nonNegativeInteger(longModel.attempts);
+  const totalFallbacks = fallbackCount + nonNegativeInteger(longModel.fallbacks);
+  const choices = countBy(results.map(({ choice }) => choice));
+  const executedOutcomes = countBy(results.map(({ executedOutcome }) => executedOutcome));
+  if (nonNegativeInteger(longModel.calls) > 0) {
+    choices.fulfill = (choices.fulfill ?? 0) + nonNegativeInteger(longModel.calls);
+    executedOutcomes.fulfilled = (executedOutcomes.fulfilled ?? 0) + nonNegativeInteger(longModel.calls);
+  }
 
   return {
     kind: "calder-station-model-evaluation",
@@ -223,16 +359,18 @@ export async function runModelEvaluation({
     requestedAt: requestedAt.toISOString(),
     completedAt: new Date().toISOString(),
     model: results.find(({ model }) => model)?.model ?? env.DEEPSEEK_MODEL ?? DEFAULT_DEEPSEEK_MODEL,
-    calls: results.length,
-    successfulModelPlans: results.filter(({ source }) => source === "model").length,
-    fallbackCount,
-    fallbackRate: results.length === 0 ? 0 : fallbackCount / results.length,
-    choices: countBy(results.map(({ choice }) => choice)),
-    executedOutcomes: countBy(results.map(({ executedOutcome }) => executedOutcome)),
-    promptTokens,
-    completionTokens,
-    estimatedCostUsd,
+    calls: totalCalls,
+    matrixCalls: results.length,
+    successfulModelPlans: results.filter(({ source }) => source === "model").length + nonNegativeInteger(longModel.calls),
+    fallbackCount: totalFallbacks,
+    fallbackRate: totalCalls === 0 ? 0 : totalFallbacks / totalCalls,
+    choices,
+    executedOutcomes,
+    promptTokens: promptTokens + nonNegativeInteger(longModel.promptTokens),
+    completionTokens: completionTokens + nonNegativeInteger(longModel.completionTokens),
+    estimatedCostUsd: estimatedCostUsd + (longHorizon?.estimatedCostUsd ?? 0),
     cases: results,
+    longHorizon,
   };
 }
 

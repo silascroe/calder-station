@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   estimateDeepSeekCost,
   modelEvaluationScenarioCount,
+  runModelLongHorizonComparison,
   runModelEvaluation,
 } from "../src/model-evaluation.js";
 
@@ -45,6 +46,7 @@ test("paid evaluation exercises varied cases through the authoritative engine", 
     repetitions: 1,
     concurrency: 2,
     wallClock: new Date("2026-08-31T00:30:00.000Z"),
+    includeLongHorizon: false,
     fetchImpl: async (_url, init) => {
       calls += 1;
       return new Response(JSON.stringify(modelResponse(JSON.parse(init.body), calls)));
@@ -73,6 +75,43 @@ test("paid evaluation exercises varied cases through the authoritative engine", 
     && [primaryOutcome, competingOutcome].filter((status) => status === "broken").length === 1
   )));
   assert.ok(report.cases.every(({ source }) => source === "model"));
+});
+
+test("a genuine adapter can create a causal multi-day divergence through the same engine", async () => {
+  let calls = 0;
+  const report = await runModelLongHorizonComparison({
+    env: { DEEPSEEK_API_KEY: "test-key" },
+    days: 7,
+    wallClock: new Date("2026-08-31T00:30:00.000Z"),
+    fetchImpl: async (_url, init) => {
+      calls += 1;
+      const body = JSON.parse(init.body);
+      const context = JSON.parse(body.messages.at(-1).content.split("\n").slice(1).join("\n"));
+      const selected = context.legalChoices.find(({ obligationId }) => obligationId === "evaluation-season-route-report");
+      return new Response(JSON.stringify({
+        id: `chatcmpl-season-${calls}`,
+        model: "deepseek-v4-flash",
+        choices: [{
+          finish_reason: "stop",
+          message: { content: JSON.stringify({
+            obligationId: selected.obligationId,
+            choice: "fulfill",
+            note: "The closing round should survive this conflict.",
+          }) },
+        }],
+        usage: { prompt_tokens: 700, completion_tokens: 40, total_tokens: 740 },
+      }));
+    },
+  });
+
+  assert.equal(calls, 1);
+  assert.equal(report.baseline.selectedObligationId, "obligation-sal-vey-notice");
+  assert.equal(report.assisted.selectedObligationId, "evaluation-season-route-report");
+  assert.equal(report.assisted.model.calls, 1);
+  assert.equal(report.assisted.model.fallbacks, 0);
+  assert.equal(report.baseline.healthy, true);
+  assert.equal(report.assisted.healthy, true);
+  assert.notEqual(report.divergence.amosSalStrengthDelta, 0);
 });
 
 test("cost estimates use the injected peak schedule and reported cache split", () => {

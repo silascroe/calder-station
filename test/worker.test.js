@@ -162,7 +162,7 @@ test("the scheduled evaluator stores a running lease before provider calls", asy
       throw new Error("provider unavailable");
     },
     TOWN: { getByName: () => stub },
-  }, { wallClock: new Date("2026-08-31T00:00:00.000Z") });
+  }, { wallClock: new Date("2026-08-31T00:00:00.000Z"), includeLongHorizon: false });
 
   assert.equal(providerCalls, 24);
   assert.equal(writes[0].status, "running");

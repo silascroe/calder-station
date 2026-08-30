@@ -86,7 +86,10 @@ async function storeEvaluation(stub, report) {
   if (!response.ok) throw new Error(`Could not persist model evaluation: HTTP ${response.status}`);
 }
 
-export async function runScheduledModelEvaluation(env, { wallClock = new Date() } = {}) {
+export async function runScheduledModelEvaluation(env, {
+  wallClock = new Date(),
+  includeLongHorizon = true,
+} = {}) {
   if (env?.TOWN_ENV !== "staging") return { status: "skipped-non-staging" };
   if (!persistentBindingReady(env)) throw new Error("Staging model evaluation requires the TOWN binding");
   const revision = env.MODEL_EVALUATION_REVISION ?? MODEL_EVALUATION_REVISION;
@@ -116,7 +119,7 @@ export async function runScheduledModelEvaluation(env, { wallClock = new Date() 
 
   let report;
   try {
-    report = await runModelEvaluation({ env, wallClock, revision });
+    report = await runModelEvaluation({ env, wallClock, revision, includeLongHorizon });
   } catch (error) {
     report = {
       kind: "calder-station-model-evaluation",

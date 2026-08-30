@@ -28,6 +28,7 @@ Success means a fresh staging Calder Station can run for 90 simulated days, prod
 - Model eligibility now requires at least two commitments due before Sal's next daily turn and excludes hard-need states where code already knows the answer. The revised prompt exposes exact deadlines, relationship/tension effects, and civic-chain consequences; the v5 matrix advances through expiry so each choice visibly fulfills one promise and breaks another.
 - The v5 genuine matrix completed 24/24 valid calls with zero fallback, 34,977 prompt tokens, 1,108 completion tokens, and about $0.007363 spend. It selected the earlier deadline in every case and ignored large trust/tension reversals. Several notes correctly inferred that both jobs should fit later the same morning; the one-action evaluator, not the simulated world, manufactured the loss.
 - Travel and service time are now deterministic world mechanics. Version 3 plans can bind several due obligations to queue actions, a bounded permutation solver chooses a feasible order when one exists, and model eligibility requires individually reachable promises for which every ordering still misses at least one deadline. The revised 90/365-day deterministic runs remain healthy; Day 90 has 7,325 events, 114 fulfilled and 7 broken obligations, and no overdue work or stuck queues.
+- The v6 physical-conflict matrix completed 24/24 valid calls with zero fallback, 44,913 prompt tokens, 985 completion tokens, and about $0.006741 spend. DeepSeek selected the civic route in all 21 equal/later-notice cases and selected the notice only in the three earlier-notice cases. It now understands the physical loss; trust and tension still did not outweigh civic continuity.
 - Persistent history now orders by durable insertion rather than lexical IDs and repairs a stale projection event sequence from SQLite, covering the first concrete year-scale log defect found in the operations audit.
 - `main` now automatically deploys disposable staging after the test gate; production remains manual. This removes the recurring evaluation bottleneck without allowing code pushes to touch canonical production state.
 - The Folio now names the specific commitment chosen by DeepSeek or fallback rules, shows the bounded decision note, and traces follow-up journal entries back to the prior promise without exposing engineering counters.
@@ -44,9 +45,9 @@ The action queue is intentionally finite: each plan has at most five actions, ea
 
 ## Next useful work
 
-1. Run the v6 paid matrix against physically impossible conflicts and verify whether trust/tension now changes choices when deadline order cannot dominate.
-2. Run a bounded genuine model-assisted multi-day scenario through the same engine and compare its causal history with the scripted baseline.
-3. Decide from those results whether Calder Station needs a narrow incident source capable of producing occasional real conflicts in ordinary long-horizon play.
+1. Run the v7 paid matrix plus genuine 90-day model-assisted comparison and inspect causal divergence at Days 1, 7, 30, and 90.
+2. Decide from those results whether Calder Station needs a narrow incident source capable of producing occasional real conflicts in ordinary long-horizon play.
+3. Reassess whether renewable notices repair consequences too quickly for a Day-1 choice to remain personally legible by Day 90.
 
 ## Deferred
 

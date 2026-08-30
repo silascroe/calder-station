@@ -561,6 +561,26 @@ function advanceCausalState(state, at) {
 function executeAction(state, resident, entry, actionAt) {
   resident.actionQueue.shift();
   resident.nextActionAt = resident.actionQueue[0]?.scheduledAt ?? null;
+  const queuedObligation = entry.obligationDecision
+    ? state.obligations.find(({ id }) => id === entry.obligationDecision.obligationId)
+    : null;
+  if (entry.obligationDecision && queuedObligation?.status !== "open") {
+    resident.interruptedActionCount += 1;
+    state.stats.interruptedActionCount += 1;
+    appendEvent(state, {
+      at: actionAt,
+      actorId: resident.id,
+      relatedActorId: queuedObligation?.counterpartyId ?? null,
+      locationId: resident.locationId,
+      obligationId: entry.obligationDecision.obligationId,
+      action: entry.intent.action,
+      type: "action-interrupted",
+      text: `set aside ${queuedObligation?.title ?? "a queued commitment"}`,
+      source: "simulation",
+      reason: `the commitment was already ${queuedObligation?.status ?? "unavailable"}`,
+    });
+    return;
+  }
   const { actualIntent } = resolveAction(state, resident, entry.intent, actionAt, entry.source, entry);
 
   if (entry.obligationDecision) {

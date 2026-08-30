@@ -48,6 +48,25 @@ This is a world-model defect, not a prompt-tuning problem. Before another paid r
 
 The complete v5 report is retained in GitHub Actions run `33329611618`.
 
+## `sal-physical-conflict-v6-2026-08-30`
+
+This revision added deterministic walking and service time, queued every due commitment after the selected priority, and called the model only after a bounded permutation solver proved that no ordering could meet every deadline. Each matrix promise was individually reachable.
+
+| Measure | Result |
+| --- | ---: |
+| Real provider calls | 24 |
+| Valid model plans | 24 |
+| Fallbacks | 0 |
+| Prompt tokens | 44,913 |
+| Completion tokens | 985 |
+| Estimated spend | $0.006741 |
+| Route report selected | 21 |
+| Notice selected | 3 |
+
+DeepSeek chose the civic route in every equal-deadline case, including large trust and tension reversals, and chose Jamie's notice only when it had the earlier hard deadline. The notes correctly named the accepted lateness instead of imagining a second same-morning delivery. This shows a stable preference for preserving the downstream civic chain over the recurring private notice; relationship scalars did not materially influence the choice.
+
+The complete v6 report is retained in GitHub Actions run `33330261982`.
+
 ## Next revision
 
-`sal-physical-conflict-v6-2026-08-30` adds deterministic walking and service time, queues every due commitment after the selected priority, and calls a model only after a bounded permutation solver proves that no ordering can meet every deadline. Each matrix promise is individually reachable; the sacrifice is now a property of the simulated clock and map rather than of an artificial one-action evaluator. Genuine results are pending isolated staging deployment.
+`sal-season-comparison-v7-2026-08-30` retains the 24 physical-conflict cases and adds a clean 90-day scripted-versus-DeepSeek comparison through the same runner. One physically impossible Day-1 conflict is the only paid decision; all later divergence comes from deterministic obligations, civic follow-ups, relationships, travel, needs, and queues. Genuine results are pending isolated staging deployment.
