@@ -51,6 +51,7 @@ Each report includes:
 - model attempts, successful calls, fallbacks, and token totals;
 - min/max energy and hunger over the whole run;
 - duplicate IDs, invalid references, overdue open commitments, due queue entries, need bounds, and obvious rest/no-activity loops.
+- repeated per-resident daily patterns, event-template concentration, relationship direction/saturation, social-edge coverage, personal meaningful-history counts, and resident participation by place.
 
 The seed, start time, authored rules, and deterministic adapter make a replay comparable across code changes. Reports contain no wall-clock timestamps or random values.
 

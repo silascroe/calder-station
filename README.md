@@ -72,7 +72,7 @@ npm run scenario -- --days 1,7,30,90
 npm run scenario -- --days 90 --seed another-replay --json
 ```
 
-Reports track event volume, resident plans and actions, relationship changes, commitment outcomes and generations, activity by place, model attempts and fallbacks, token use, need ranges, queue state, and invariant failures. Runs are seedable and replayable so rule changes can be compared without inventing a second fake simulation for testing.
+Reports track event volume, resident plans and actions, relationship changes, commitment outcomes and generations, activity by place, model attempts and fallbacks, token use, need ranges, queue state, and invariant failures. They also measure exact event-template concentration, repeated daily action patterns, relationship saturation and encounter coverage, per-resident meaningful history, and participation by place. Runs are seedable and replayable so rule changes can be compared without inventing a second fake simulation for testing.
 
 Normal CI and the default scenario command remain deterministic and make no paid calls. Deliberate model evaluation uses the same runner with an asynchronous DeepSeek adapter and an explicit pricing-policy bypass; it is never a browser-accessible mode.
 

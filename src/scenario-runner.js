@@ -32,6 +32,122 @@ function eventCounts(events) {
   }, {});
 }
 
+function eventDiversity(events) {
+  const templates = new Map();
+  for (const event of events) {
+    const key = `${event.type ?? "unknown"}:${event.text ?? ""}`;
+    templates.set(key, (templates.get(key) ?? 0) + 1);
+  }
+  const ranked = [...templates.entries()]
+    .map(([template, count]) => ({ template, count }))
+    .sort((left, right) => right.count - left.count || left.template.localeCompare(right.template));
+  const topTenCount = ranked.slice(0, 10).reduce((total, item) => total + item.count, 0);
+  const meaningfulTypes = new Set(["encounter", "obligation", "obligation-created", "action-interrupted", "model-fallback"]);
+  return {
+    total: events.length,
+    uniqueTemplates: templates.size,
+    topTenShare: events.length === 0 ? 0 : topTenCount / events.length,
+    meaningfulEvents: events.filter(({ type }) => meaningfulTypes.has(type)).length,
+    topTemplates: ranked.slice(0, 10),
+  };
+}
+
+function dailyPatternDiagnostics(state) {
+  const decisions = (state.events ?? []).filter((event) => event.type === "decision" && event.actorId);
+  const byResidentDay = new Map();
+  for (const event of decisions) {
+    const key = `${event.actorId}:${String(event.at).slice(0, 10)}`;
+    const signature = byResidentDay.get(key) ?? [];
+    signature.push(`${event.action ?? "unknown"}@${event.locationId ?? "unknown"}`);
+    byResidentDay.set(key, signature);
+  }
+
+  return Object.fromEntries(state.residents.map((resident) => {
+    const signatures = [...byResidentDay.entries()]
+      .filter(([key]) => key.startsWith(`${resident.id}:`))
+      .map(([, actions]) => actions.join("|"));
+    const counts = signatures.reduce((result, signature) => {
+      increment(result, signature);
+      return result;
+    }, {});
+    const dominant = Object.entries(counts)
+      .map(([signature, count]) => ({ signature, count }))
+      .sort((left, right) => right.count - left.count || left.signature.localeCompare(right.signature))[0] ?? null;
+    return [resident.id, {
+      name: resident.name,
+      daysObserved: signatures.length,
+      uniquePatterns: Object.keys(counts).length,
+      dominantPattern: dominant?.signature ?? null,
+      dominantDays: dominant?.count ?? 0,
+      dominantShare: signatures.length === 0 ? 0 : (dominant?.count ?? 0) / signatures.length,
+    }];
+  }));
+}
+
+function relationshipDynamics(initial, state) {
+  const initialById = new Map(initial.relationships.map((relationship) => [relationship.id, relationship]));
+  const encountered = new Set(
+    (state.events ?? [])
+      .filter(({ type, relationshipId }) => type === "encounter" && relationshipId)
+      .map(({ relationshipId }) => relationshipId),
+  );
+  const directions = { increased: 0, decreased: 0, unchanged: 0 };
+  const saturated = [];
+  for (const relationship of state.relationships) {
+    const before = initialById.get(relationship.id)?.strength ?? relationship.strength;
+    if (relationship.strength > before) directions.increased += 1;
+    else if (relationship.strength < before) directions.decreased += 1;
+    else directions.unchanged += 1;
+    if (relationship.strength >= 95 || relationship.strength <= 5) {
+      saturated.push({
+        id: relationship.id,
+        fromId: relationship.fromId,
+        toId: relationship.toId,
+        strength: relationship.strength,
+      });
+    }
+  }
+  return {
+    ...directions,
+    total: state.relationships.length,
+    encounteredCount: encountered.size,
+    unencounteredIds: state.relationships.filter(({ id }) => !encountered.has(id)).map(({ id }) => id),
+    saturated,
+  };
+}
+
+function personalHistoryDiagnostics(state) {
+  const meaningfulTypes = new Set(["encounter", "obligation", "obligation-created", "action-interrupted", "model-fallback"]);
+  return Object.fromEntries(state.residents.map((resident) => {
+    const events = (state.events ?? []).filter((event) => (
+      meaningfulTypes.has(event.type)
+      && (event.actorId === resident.id || event.relatedActorId === resident.id)
+    ));
+    const counterparties = new Set(events.flatMap((event) => [event.actorId, event.relatedActorId]).filter((id) => id && id !== resident.id));
+    return [resident.id, {
+      name: resident.name,
+      meaningfulEvents: events.length,
+      activeDays: new Set(events.map(({ at }) => String(at).slice(0, 10))).size,
+      counterparties: [...counterparties].sort(),
+      eventTypes: eventCounts(events),
+    }];
+  }));
+}
+
+function placeParticipation(state) {
+  const result = {};
+  for (const location of state.locations) {
+    const events = (state.events ?? []).filter((event) => event.type === "decision" && event.locationId === location.id);
+    result[location.id] = {
+      name: location.name,
+      actions: events.length,
+      residentCount: new Set(events.map(({ actorId }) => actorId).filter(Boolean)).size,
+      residents: [...new Set(events.map(({ actorId }) => actorId).filter(Boolean))].sort(),
+    };
+  }
+  return result;
+}
+
 function relationshipChanges(initial, final) {
   const initialById = new Map((initial.relationships ?? []).map((relationship) => [relationship.id, relationship]));
   const changes = (final.relationships ?? [])
@@ -263,6 +379,13 @@ export function summarizeScenario(initial, state, extremes) {
     relationshipChanges: relationshipChanges(initial, state),
     obligations: obligationsSummary(state),
     locations: locationsSummary(state),
+    longHorizon: {
+      eventDiversity: eventDiversity(state.events ?? []),
+      dailyPatterns: dailyPatternDiagnostics(state),
+      relationshipDynamics: relationshipDynamics(initial, state),
+      personalHistories: personalHistoryDiagnostics(state),
+      placeParticipation: placeParticipation(state),
+    },
     model: {
       calls: state.stats.modelCalls ?? 0,
       attempts: state.stats.modelAttempts ?? 0,

@@ -32,6 +32,13 @@ test("the staging runner reports useful 1, 7, 30, and 90 day checkpoints", async
   assert.ok(final.ranges.hunger.min >= 0 && final.ranges.hunger.max <= 100);
   assert.deepEqual(final.invariants.stuckResidents, []);
   assert.deepEqual(final.invariants.queueEntriesDueAtEnd, []);
+  assert.equal(final.longHorizon.relationshipDynamics.total, 27);
+  assert.ok(final.longHorizon.relationshipDynamics.saturated.length > 0);
+  assert.ok(final.longHorizon.eventDiversity.topTenShare > 0);
+  assert.equal(Object.keys(final.longHorizon.dailyPatterns).length, 15);
+  assert.equal(Object.keys(final.longHorizon.personalHistories).length, 15);
+  assert.equal(Object.keys(final.longHorizon.placeParticipation).length, 14);
+  assert.ok(final.longHorizon.dailyPatterns.mara.dominantShare > 0);
 });
 
 test("the same seed and rules produce the same long-horizon report", async () => {
