@@ -1,82 +1,146 @@
 # Town
 
-Town is an experiment in persistent multi-agent simulation: a small world with residents, routines, relationships, commitments, and consequences that continue while nobody is looking.
+**A persistent small-world simulation about people, routines, relationships, and consequences that keep moving after you close the tab.**
 
-The public world is **Calder Station**. Its stable internal world and storage key remain `rookwood` so the existing production Durable Object is not orphaned by an editorial rename. That implementation detail is not part of the town's public identity.
+The world is **Calder Station**: fifteen residents living across fourteen places, carrying needs, routines, relationships, commitments, and a growing event history. The project is an experiment in making an AI-assisted simulation feel less like a room full of chatbots and more like a place with an actual clock.
 
-## Design constraints
+<p align="center">
+  <img src="./public/resident-icons/mara-konstantinidis.png" width="150" alt="Mara Konstantinidis">
+  <img src="./public/resident-icons/sal-damico.png" width="150" alt="Sal D'Amico">
+  <img src="./public/resident-icons/irena-kaczmarek.png" width="150" alt="Irena Kaczmarek">
+  <img src="./public/resident-icons/otis-bell.png" width="150" alt="Otis Bell">
+</p>
 
-- Residents are durable records, not permanently running processes.
-- Ordinary simulation mechanics are deterministic, bounded, and cheap.
-- A model proposes structured intent; the simulation owns legality, timing, state, and consequences.
-- A plan can enqueue several bounded actions, but the queue cannot create an unbounded thought or conversation loop.
-- Model failures fall back to scripted rules and record the fallback.
-- The town remains inspectable through an append-only event history and replayable seeds.
-- Production state is persistent and protected from casual resets; staging is isolated and disposable.
-- The dashboard is a read-only window into the town, not a second simulation engine.
-- D1, Queues, and Workflows remain deferred until this one coordinator has a concrete need for them.
+## The idea
 
-## Run tests
+Town is not fifteen language-model sessions talking forever.
 
-```sh
-npm test
+Residents are durable records inside a deterministic simulation. Ordinary code owns the world clock, needs, movement, locations, relationships, obligations, action timing, and consequences. A model may occasionally propose a **bounded intent**; that intent still has to pass the same validator and executor as every scripted decision.
+
+That split is the point. Language models are good at choosing among messy human possibilities. They are much less trustworthy as clocks, databases, physics engines, or gods.
+
+So Town gives the model a vote, not the keys.
+
+## Calder Station today
+
+The authored world currently contains:
+
+- 15 residents
+- 14 places
+- 27 relationship edges
+- staggered daily planning turns
+- bounded intra-day action queues
+- persistent needs, locations, relationships, and commitments
+- an append-only event history
+- a renewable commitment chain with downstream relationship consequences
+- a read-only folio UI with a town register, map, resident pages, histories, and portraits
+
+Most decisions are still scripted on purpose. The current model experiment is deliberately narrow: **Sal D'Amico** can use DeepSeek when deciding what to do about an open commitment involving **Jamie Allen's notice**. The model gets compact context and must return a legal structured choice. If it times out, fails validation, or returns nonsense, deterministic fallback rules take over.
+
+This is still an experiment, not a finished artificial society. The current phase is about finding out whether a small world can remain coherent and interesting over long spans of simulated time before adding more people, more model calls, or more machinery.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[World clock] --> B[Residents due to plan]
+    B --> C{Decision source}
+    C -->|ordinary life| D[Scripted planner]
+    C -->|eligible incident| E[DeepSeek adapter]
+    D --> F[Plan validator]
+    E --> F
+    F --> G[Bounded action queue]
+    G --> H[Deterministic executor]
+    H --> I[Needs / movement / relationships / commitments]
+    I --> J[Event history + projection]
+    J --> K[SQLite-backed Durable Object]
+    K --> L[Read-only Folio UI]
 ```
 
-The current tests use Node's built-in test runner and do not need dependencies installed.
+A planning turn produces a short ordered plan of at most five actions. The executor schedules those actions through the day and remains authoritative about what actually happens. Hard needs can interrupt an intention. A later planning turn can supersede unfinished work. Commitments can be fulfilled, delayed, missed, and renewed, but every loop has explicit caps.
 
-## Run a long-horizon scenario
+There is no hidden resident process and no model-managed clock.
 
-The scenario runner starts a fresh in-memory staging town and uses the same `advanceTown` rules as production. It does not touch Cloudflare state and does not change the public `?ticks=` limit.
+## Long-horizon simulation
+
+The interesting question is not whether Calder Station looks plausible for five minutes. It is whether the rules still make sense after a week, a month, or a season.
+
+The scenario runner starts a fresh in-memory town and advances the **same simulation engine used by production** through requested checkpoints:
 
 ```sh
 npm run scenario -- --days 1,7,30,90
 npm run scenario -- --days 90 --seed another-replay --json
 ```
 
-Reports include event counts, plans and actions per resident, relationship deltas, obligation outcomes and generations, activity by place, model telemetry, need ranges, queue state, and invariant/stuck-state checks.
+Reports track event volume, resident plans and actions, relationship changes, commitment outcomes and generations, activity by place, model attempts and fallbacks, token use, need ranges, queue state, and invariant failures. Runs are seedable and replayable so rule changes can be compared without inventing a second fake simulation for testing.
 
-## Run the dashboard locally
+The current milestone is simple: a fresh Calder Station should survive 90 simulated days and accumulate understandable causal differences instead of producing ninety copies of the same day.
+
+## Run it locally
+
+The test suite uses Node's built-in test runner:
+
+```sh
+npm test
+```
+
+Run the dashboard and Worker locally with Wrangler:
 
 ```sh
 npx wrangler dev
 ```
 
-The Worker serves the Folio register and read-only routes for `/`, `/map`, `/residents`, and `/residents/:id`. Explicit `?ticks=` requests remain ephemeral replays for inspection and are capped at 48 ticks.
+The Worker serves the Folio UI and read-only routes for `/`, `/map`, `/residents`, and `/residents/:id`. Explicit `?ticks=` requests create ephemeral inspection replays and are capped at 48 ticks; they do not mutate the persistent production town.
 
-## Current simulation
+## Design constraints
 
-Calder Station has fifteen residents, fourteen places, twenty-seven relationship edges, and one renewable courier commitment. Each resident receives a staggered daily planning turn. The scripted planner returns a short ordered list of work, meals, rest, deliveries, or observation; the deterministic executor schedules those intentions through the day, interrupts them when a new plan or urgent need requires it, and records each accepted action.
+A few rules keep this project from quietly turning into an expensive haunted spreadsheet:
 
-The first model experiment is deliberately narrow: Sal D’Amico may use DeepSeek for the open commitment involving Jamie Allen's notice. The adapter sends bounded context, requires one legal choice, and returns the same plan contract as the scripted planner. The model never writes state directly.
+- residents are records, not permanently running agent processes;
+- deterministic code owns legality, state transitions, timing, and consequences;
+- model output is structured, bounded, validated, and replaceable with a fallback;
+- action queues and renewable commitment chains have hard caps;
+- state changes remain inspectable through event history and replayable seeds;
+- production state is persistent and protected from casual resets;
+- staging state is isolated and disposable;
+- the browser is a viewer, not a second simulation engine;
+- infrastructure is added only when the simulation demonstrates an actual need for it.
 
-The commitment loop can create a follow-up notice after a fulfillment, delay, or missed due time. Relationship strength changes with the outcome, and the series is capped so a bad rule cannot grow forever.
+That currently means one SQLite-backed Cloudflare Durable Object coordinator. No D1, Queues, Workflows, one-object-per-resident architecture, WebSocket firehose, or unbounded conversation loop until one of those things earns its keep.
 
-The compact `tinyTownSeed` remains available for fast regression tests.
+## Production and staging
 
-## Environments and deployment
+Deployment is intentionally manual through GitHub Actions.
 
-The manual GitHub Actions workflow accepts a deployment target:
+- `production` deploys `town-dashboard` and preserves the persistent town.
+- `staging` deploys `town-dashboard-staging` with isolated disposable state.
 
-- `staging` deploys `town-dashboard-staging` and uses the isolated `rookwood-staging` Durable Object key.
-- `production` deploys `town-dashboard` and preserves the canonical persistent `rookwood` key.
+Both environments use `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. `DEEPSEEK_API_KEY` is stored as a Cloudflare Worker secret only in environments that should make model calls; it is never sent to the browser.
 
-Both targets use the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Store `DEEPSEEK_API_KEY` as a Cloudflare Worker secret in the environment that should make model calls; it is never sent to the browser. Production and staging secrets are separate when set with Wrangler's environment flag.
+A code commit does not automatically reset, publish, or redeploy the town.
 
-The workflow is intentionally manual. Deploying production or staging is an operator decision, not a side effect of a code commit.
+## Repository map
 
-## Repository layout
+| Path | What lives there |
+| --- | --- |
+| `src/simulation.js` | world state, action queues, execution, replay, projections |
+| `src/daily-plans.js` | versioned planner contract and validation |
+| `src/scripted-decisions.js` | ordinary rule-based resident intent |
+| `src/deepseek-planner.js` | bounded DeepSeek decision adapter and failure handling |
+| `src/obligations.js` | commitment resolution, expiry, and bounded renewal |
+| `src/social.js` | deterministic co-location and relationship effects |
+| `src/scenario-runner.js` | long-horizon diagnostics and invariant checks |
+| `src/town-do.js` | persistent SQLite-backed Durable Object coordinator |
+| `src/demo-data.js` | authored Calder Station seed and compact regression seed |
+| `public/` | Folio UI, map, resident register, and portrait assets |
+| `test/` | unit, integration, migration, replay, runner, and frontend tests |
+| `docs/architecture.md` | deeper architecture notes and system boundaries |
+| `plan.md` | current milestone, sequencing, and deliberately deferred work |
 
-- `src/simulation.js` — state creation, the bounded action queue, execution, replay, and projections.
-- `src/daily-plans.js` — versioned plan contract and validator.
-- `src/scripted-decisions.js` — ordinary rule-based intent with no model calls.
-- `src/obligations.js` — commitment resolution, expiry, and bounded renewal.
-- `src/scenario-runner.js` — long-horizon diagnostics and invariant checks.
-- `src/town-do.js` — one SQLite-backed Durable Object coordinator and hourly alarm.
-- `src/deepseek-planner.js` — bounded DeepSeek adapter with typed failures.
-- `src/social.js` — deterministic co-location and relationship resolver.
-- `src/demo-data.js` — authored Calder Station seed and compact regression seed.
-- `src/identity.js` — public identity plus one-time historical migration helpers.
-- `public/` — Folio dashboard, map, resident register, and portrait assets.
-- `test/` — unit, integration, migration, replay, runner, and frontend contract tests.
-- `docs/architecture.md` — system boundaries and decisions.
-- `plan.md` — sequencing and deferred work.
+## Philosophy
+
+The goal is not maximum agent count, maximum token spend, or maximum emergent chaos.
+
+The goal is a world small enough to understand, persistent enough to matter, and constrained enough that when something unexpected happens, you can trace **why** it happened.
+
+Calder Station is the test case.
