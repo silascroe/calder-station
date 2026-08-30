@@ -93,6 +93,7 @@ function relationshipDynamics(initial, state) {
   );
   const directions = { increased: 0, decreased: 0, unchanged: 0 };
   const saturated = [];
+  const strained = [];
   for (const relationship of state.relationships) {
     const before = initialById.get(relationship.id)?.strength ?? relationship.strength;
     if (relationship.strength > before) directions.increased += 1;
@@ -106,6 +107,15 @@ function relationshipDynamics(initial, state) {
         strength: relationship.strength,
       });
     }
+    if ((relationship.tension ?? 0) >= 20) {
+      strained.push({
+        id: relationship.id,
+        fromId: relationship.fromId,
+        toId: relationship.toId,
+        strength: relationship.strength,
+        tension: relationship.tension,
+      });
+    }
   }
   return {
     ...directions,
@@ -113,6 +123,8 @@ function relationshipDynamics(initial, state) {
     encounteredCount: encountered.size,
     unencounteredIds: state.relationships.filter(({ id }) => !encountered.has(id)).map(({ id }) => id),
     saturated,
+    strained,
+    maxTension: Math.max(0, ...state.relationships.map(({ tension = 0 }) => tension)),
   };
 }
 
@@ -201,6 +213,11 @@ function obligationsSummary(state) {
     return counts;
   }, {});
   const generations = obligations.reduce((highest, obligation) => Math.max(highest, obligation.generation ?? 0), 0);
+  const civic = obligations.filter(({ civicChainId }) => civicChainId);
+  const civicByChain = civic.reduce((counts, obligation) => {
+    increment(counts, obligation.civicChainId);
+    return counts;
+  }, {});
   return {
     total: obligations.length,
     created: state.stats.obligationCreatedCount ?? obligations.length,
@@ -212,6 +229,15 @@ function obligationsSummary(state) {
     open: statusCounts.open ?? 0,
     highestGeneration: generations,
     statusCounts,
+    civic: {
+      total: civic.length,
+      created: state.stats.civicObligationCreatedCount ?? civic.length,
+      byChain: civicByChain,
+      statusCounts: civic.reduce((counts, obligation) => {
+        increment(counts, obligation.status ?? "unknown");
+        return counts;
+      }, {}),
+    },
   };
 }
 
@@ -254,10 +280,12 @@ function invariantReport(initial, state) {
   const locationIds = new Set(state.locations.map(({ id }) => id));
   const relationshipIds = new Set((state.relationships ?? []).map(({ id }) => id));
   const obligationIds = new Set((state.obligations ?? []).map(({ id }) => id));
+  const obligationIdList = (state.obligations ?? []).map(({ id }) => id);
   const eventIds = (state.events ?? []).map(({ id }) => id);
   const residentIdSet = new Set(residentIds);
   const duplicateResidentIds = residentIds.filter((id, index) => residentIds.indexOf(id) !== index);
   const duplicateEventIds = eventIds.filter((id, index) => eventIds.indexOf(id) !== index);
+  const duplicateObligationIds = obligationIdList.filter((id, index) => obligationIdList.indexOf(id) !== index);
   const invalidResidentLocations = state.residents
     .filter((resident) => !locationIds.has(resident.locationId))
     .map(({ id, locationId }) => ({ id, locationId }));
@@ -278,6 +306,15 @@ function invariantReport(initial, state) {
       counterpartyId,
       destinationId,
     }));
+  const invalidCivicProgress = [];
+  for (const [chainId, progress] of Object.entries(state.civicIncidents?.chains ?? {})) {
+    if (progress.activeObligationId) {
+      const active = state.obligations.find(({ id }) => id === progress.activeObligationId);
+      if (!active || active.status !== "open" || active.civicChainId !== chainId) {
+        invalidCivicProgress.push({ chainId, activeObligationId: progress.activeObligationId });
+      }
+    }
+  }
   const duplicateQueueEntries = [];
   const queueEntriesDueAtEnd = [];
   const invalidQueueEntries = [];
@@ -346,9 +383,11 @@ function invariantReport(initial, state) {
   const checks = {
     duplicateResidentIds,
     duplicateEventIds,
+    duplicateObligationIds,
     invalidResidentLocations,
     invalidRelationshipResidents,
     invalidObligationReferences,
+    invalidCivicProgress,
     invalidEventActors,
     invalidEventReferences,
     duplicateQueueEntries,
@@ -401,6 +440,7 @@ export function summarizeScenario(initial, state, extremes) {
       plans: state.stats.planCount,
       actions: state.stats.actionCount,
       interruptedActions: state.stats.interruptedActionCount,
+      conflictedPlans: state.stats.conflictedPlanCount ?? 0,
       encounters: state.stats.encounterCount,
     },
     invariants,

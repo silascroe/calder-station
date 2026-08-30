@@ -1,3 +1,5 @@
+import { applySocialEncounter } from "./relationship-dynamics.js";
+
 function dayKey(value) {
   return new Date(value).toISOString().slice(0, 10);
 }
@@ -11,10 +13,6 @@ function relationshipBetween(state, residentId, targetId) {
 
 function hasEncounteredToday(resident, at) {
   return resident.lastEncounterAt && dayKey(resident.lastEncounterAt) === dayKey(at);
-}
-
-function clamp(value, minimum = 0, maximum = 100) {
-  return Math.min(maximum, Math.max(minimum, value));
 }
 
 /**
@@ -41,18 +39,23 @@ export function resolveSocialIntentions(state, resident, plan, at) {
     target.lastEncounterAt = new Date(at).toISOString();
     target.lastEncounterWithId = resident.id;
     target.socialCount = (target.socialCount ?? 0) + 1;
-    relationship.strength = clamp(relationship.strength + 1);
+    const change = applySocialEncounter(relationship, at);
 
     encounters.push({
       actorId: resident.id,
       targetId: target.id,
       locationId: location.id,
       relationshipId: relationship.id,
+      relationshipDelta: change.strengthDelta,
+      tensionDelta: change.tensionDelta,
       type: "encounter",
-      text: `talked with ${target.name} at ${location.name}`,
+      text: change.tone === "tense"
+        ? `had a tense conversation with ${target.name} at ${location.name}`
+        : change.tone === "repairing"
+          ? `cleared the air with ${target.name} at ${location.name}`
+          : `talked with ${target.name} at ${location.name}`,
       reason: intention.reason,
     });
   }
   return encounters;
 }
-

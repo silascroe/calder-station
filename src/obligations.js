@@ -3,6 +3,7 @@ import {
   OBLIGATION_CHOICES,
   scriptedDailyPlan,
 } from "./daily-plans.js";
+import { applyCommitmentOutcome } from "./relationship-dynamics.js";
 
 const MINUTE_MS = 60 * 1000;
 
@@ -10,16 +11,12 @@ export const RENEWAL_COOLDOWN_MINUTES = 6 * 60;
 // Keep a renewal chain bounded, while allowing a single commitment series to
 // remain causally relevant throughout the 90-day staging horizon.
 export const MAX_RENEWABLE_GENERATIONS = 90;
-export const MAX_OPEN_OBLIGATIONS = 2;
+export const MAX_OPEN_OBLIGATIONS = 6;
 
 function asDate(value) {
   const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
   if (Number.isNaN(date.getTime())) throw new TypeError(`Invalid date: ${String(value)}`);
   return date;
-}
-
-function clamp(value, minimum = 0, maximum = 100) {
-  return Math.min(maximum, Math.max(minimum, value));
 }
 
 function relationshipBetween(state, firstId, secondId) {
@@ -50,13 +47,14 @@ export function materializeObligation(seed, startedAt) {
     seriesId: seed.seriesId ?? seed.id,
     generation: Number.isInteger(seed.generation) && seed.generation >= 0 ? seed.generation : 0,
     parentObligationId: seed.parentObligationId ?? null,
+    requiredAction: seed.requiredAction ?? (seed.kind === "delivery" ? "deliver" : "observe"),
   };
 }
 
 export function openObligationFor(state, residentId) {
-  return (state.obligations ?? []).find((obligation) => (
-    obligation.ownerId === residentId && obligation.status === "open"
-  ));
+  return (state.obligations ?? [])
+    .filter((obligation) => obligation.ownerId === residentId && obligation.status === "open")
+    .sort((left, right) => String(left.dueAt).localeCompare(String(right.dueAt)) || left.id.localeCompare(right.id))[0];
 }
 
 /**
@@ -69,14 +67,15 @@ export function scriptedObligationPlan({ town, resident, now } = {}) {
   if (!obligation) return base;
 
   const canTakeDirectRoute = resident.energy > 35 && resident.hunger < 94;
+  const requiredAction = obligation.requiredAction ?? "deliver";
   const action = canTakeDirectRoute
     ? {
       ...base.actions[0],
-      action: "deliver",
+      action: requiredAction,
       locationId: obligation.destinationId,
       offsetMinutes: 0,
       reason: `${obligation.title} is due soon`,
-      status: "Taking the direct route",
+      status: requiredAction === "work" ? "Taking on the promised work" : "Taking the direct route",
       mood: "Determined",
     }
     : {
@@ -92,7 +91,7 @@ export function scriptedObligationPlan({ town, resident, now } = {}) {
   return {
     ...base,
     priorities: [
-      canTakeDirectRoute ? "fulfill the sealed notice" : "report the delayed sealed notice",
+      canTakeDirectRoute ? `fulfill ${obligation.title}` : `report a delay on ${obligation.title}`,
       "keep the regular route from unraveling",
     ],
     // Keep the commitment from erasing the resident's ordinary meals and
@@ -103,7 +102,7 @@ export function scriptedObligationPlan({ town, resident, now } = {}) {
     obligationDecision: {
       obligationId: obligation.id,
       choice: canTakeDirectRoute ? "fulfill" : "report_delay",
-      note: canTakeDirectRoute ? "the direct route is still possible" : "the detour would risk the rest of the route",
+      note: canTakeDirectRoute ? "the promised work is still possible" : "the detour would risk the rest of the day",
     },
   };
 }
@@ -133,18 +132,29 @@ export function resolveObligationDecision(state, resident, plan, at) {
   obligation.resolution = decision.choice;
   obligation.resolutionNote = decision.note ?? null;
   obligation.resolvedAt = resolvedAt;
-  relationship.strength = clamp(relationship.strength + (fulfilling ? 2 : -2));
+  const relationshipChange = applyCommitmentOutcome(
+    relationship,
+    fulfilling ? "fulfilled" : "delayed",
+    resolvedAt,
+  );
 
   const destination = state.locations.find(({ id }) => id === obligation.destinationId);
+  const actionText = {
+    deliver: `delivered ${obligation.title} to ${destination?.name ?? obligation.destinationId}`,
+    work: `completed ${obligation.title} at ${destination?.name ?? obligation.destinationId}`,
+    observe: `completed the promised check for ${obligation.title} at ${destination?.name ?? obligation.destinationId}`,
+  }[obligation.requiredAction ?? "deliver"];
   return {
     obligationId: obligation.id,
     actorId: resident.id,
     relatedActorId: counterparty.id,
     locationId: fulfilling ? obligation.destinationId : resident.locationId,
     relationshipId: relationship.id,
+    relationshipDelta: relationshipChange.strengthDelta,
+    tensionDelta: relationshipChange.tensionDelta,
     type: "obligation",
     text: fulfilling
-      ? `delivered ${obligation.title} to ${destination?.name ?? obligation.destinationId}`
+      ? actionText
       : `reported a delay on ${obligation.title}`,
     reason: decision.note ?? null,
   };
@@ -164,7 +174,9 @@ export function expireOverdueObligations(state, at) {
     obligation.resolvedAt = now.toISOString();
 
     const relationship = relationshipBetween(state, obligation.ownerId, obligation.counterpartyId);
-    if (relationship) relationship.strength = clamp(relationship.strength - 4);
+    const relationshipChange = relationship
+      ? applyCommitmentOutcome(relationship, "broken", now)
+      : null;
 
     outcomes.push({
       obligationId: obligation.id,
@@ -172,6 +184,8 @@ export function expireOverdueObligations(state, at) {
       relatedActorId: obligation.counterpartyId,
       locationId: obligation.destinationId,
       relationshipId: relationship?.id ?? null,
+      relationshipDelta: relationshipChange?.strengthDelta ?? 0,
+      tensionDelta: relationshipChange?.tensionDelta ?? 0,
       type: "obligation",
       text: `missed ${obligation.title}`,
       reason: obligation.resolutionNote,

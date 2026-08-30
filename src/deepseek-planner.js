@@ -93,6 +93,20 @@ function counterpartyDetails(state, obligation) {
   };
 }
 
+function competingObligations(state, resident, selectedId) {
+  return (state.obligations ?? [])
+    .filter((obligation) => obligation.ownerId === resident.id && obligation.status === "open" && obligation.id !== selectedId)
+    .sort((left, right) => String(left.dueAt).localeCompare(String(right.dueAt)))
+    .slice(0, 3)
+    .map((obligation) => ({
+      id: obligation.id,
+      title: obligation.title,
+      dueAt: obligation.dueAt,
+      requiredAction: obligation.requiredAction ?? "deliver",
+      destination: locationDetails(state, obligation.destinationId),
+    }));
+}
+
 export function buildDeepSeekContext({ state, resident, now, obligation } = {}) {
   const routine = resident.routine ?? {};
   const home = locationDetails(state, resident.homeLocationId);
@@ -135,19 +149,21 @@ export function buildDeepSeekContext({ state, resident, now, obligation } = {}) 
       dueAt: obligation.dueAt,
       counterparty: counterpartyDetails(state, obligation),
       destination,
+      requiredAction: obligation.requiredAction ?? "deliver",
     },
+    competingObligations: competingObligations(state, resident, obligation.id),
     legalChoices: [
       {
         choice: "fulfill",
-        action: "deliver",
+        action: obligation.requiredAction ?? "deliver",
         locationId: destination.id,
-        effect: "The notice is fulfilled and the relationship strengthens by 2.",
+        effect: "The commitment is fulfilled and the relationship strengthens by 2, but the action consumes this planning slot.",
       },
       {
         choice: "report_delay",
         action: "observe",
         locationId: current.id,
-        effect: "The notice is marked delayed and the relationship weakens by 2.",
+        effect: "The commitment is marked delayed and the relationship weakens by 2, preserving this planning slot for ordinary needs or another commitment.",
       },
     ],
   };

@@ -12,8 +12,9 @@ function modelResponse(body, index) {
   const context = JSON.parse(prompt.slice(prompt.indexOf("\n") + 1));
   const delay = context.resident.energy < 30 || context.resident.hunger >= 94;
   const choice = delay ? "report_delay" : "fulfill";
-  const action = delay ? "observe" : "deliver";
-  const locationId = delay ? context.resident.currentLocation.id : context.obligation.destination.id;
+  const legalChoice = context.legalChoices.find((candidate) => candidate.choice === choice);
+  const action = legalChoice.action;
+  const locationId = legalChoice.locationId;
   return {
     id: `chatcmpl-evaluation-${index}`,
     model: "deepseek-v4-flash",
@@ -69,6 +70,11 @@ test("paid evaluation exercises varied cases through the authoritative engine", 
   assert.equal(report.completionTokens, 560);
   assert.ok(report.estimatedCostUsd > 0);
   assert.ok(report.cases.some(({ executedOutcome }) => executedOutcome === "delayed"));
+  assert.ok(report.cases.some(({ conditions }) => conditions.competingRoute));
+  assert.equal(
+    report.cases.find(({ conditions }) => conditions.competingRoute).competingObligationCount,
+    2,
+  );
   assert.ok(report.cases.every(({ source }) => source === "model"));
 });
 

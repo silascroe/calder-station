@@ -320,6 +320,7 @@ export class RookwoodTown {
           modelCompletionTokens: state.stats.modelCompletionTokens,
           modelPromptCacheHitTokens: state.stats.modelPromptCacheHitTokens,
           modelPromptCacheMissTokens: state.stats.modelPromptCacheMissTokens,
+          conflictedPlans: state.stats.conflictedPlanCount,
           evaluationRevision,
           evaluationStatus: evaluation?.status
             ?? (evaluationRevision && !this.env?.DEEPSEEK_API_KEY ? "blocked-missing-key" : evaluationRevision ? "pending" : null),

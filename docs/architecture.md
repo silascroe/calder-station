@@ -16,9 +16,11 @@ The model returns intent. The simulation remains authoritative about what actual
 
 ## Current world slice
 
-The authored seed contains fifteen residents, fourteen places, twenty-seven relationship edges, and one renewable delivery commitment. Residents have homes, workplaces, routines, needs, relationships, planning times, and bounded action queues. Social intentions only become encounters when both people are related, co-located, and available.
+The authored seed contains fifteen residents, fourteen places, twenty-seven relationship edges, and one legacy renewable delivery commitment. Residents have homes, workplaces, routines, needs, relationships, planning times, and bounded action queues. Social intentions only become encounters when both people are related, co-located, and available.
 
-The initial commitment creates a causal chain: a notice is assigned, Sal chooses fulfillment or delay, the relationship changes, and a bounded follow-up can be created after a cooldown. Missed due times break the commitment and apply a larger relationship penalty. Renewal has a generation cap and an open-commitment cap.
+Four authored civic chains add broader causal history without a general story generator. Each step names an owner, counterparty, destination, legal action, and follow-up. Fulfillment schedules the next authored step; delay retries the step; failure ends the cycle until a cooldown. IDs encode chain/cycle/step/attempt and parent IDs make the lineage inspectable. The route chain can overlap Sal's clerk notice, creating a genuine competing commitment while the plan still selects only one bounded obligation action.
+
+Relationships retain their authored baseline plus evolving strength, tension, interaction count, and last-interaction time. Fulfillment can strengthen a tie with diminishing returns; delay and failure weaken it and add tension. A later co-located conversation may be tense, repairing, or warm. This prevents every social edge from monotonically converging on 100 while leaving consequences deterministic and auditable.
 
 ## Plan and action boundaries
 
@@ -37,6 +39,8 @@ Production and staging are separate Worker environments and use separate object 
 The `TOWN` binding is declared separately in each Wrangler environment because Durable Object bindings are not inherited. Config validation runs before deployment, and a post-deploy smoke check requires the expected environment, Durable Object key, persistence mode, and alarm. At runtime, a configured environment missing `TOWN` returns HTTP 503; only an explicit preview request may use ephemeral state there.
 
 Seed reconciliation adds authored records and refreshes authored identity/routine metadata without resetting evolved needs, location, queue, relationships, or history. Stable internal IDs remain stable across editorial renames.
+
+Runtime metadata backfills—civic progress, generic obligation actions, relationship tension fields, and new counters—are detected independently of seed revision and persisted after loading an evolved projection. They never replace the existing resident, queue, relationship strength, or event history.
 
 ## Long-horizon runner
 

@@ -27,13 +27,17 @@ test("the staging runner reports useful 1, 7, 30, and 90 day checkpoints", async
   assert.ok(final.eventCounts["obligation-created"] >= 10);
   assert.ok(final.obligations.created > 1);
   assert.ok(final.obligations.highestGeneration >= 30);
+  assert.ok(final.obligations.civic.total > 0);
+  assert.equal(Object.keys(final.obligations.civic.byChain).length, 4);
+  assert.ok(final.stats.conflictedPlans > 0);
   assert.ok(final.relationshipChanges.changedCount > 0);
   assert.ok(final.ranges.energy.min >= 0 && final.ranges.energy.max <= 100);
   assert.ok(final.ranges.hunger.min >= 0 && final.ranges.hunger.max <= 100);
   assert.deepEqual(final.invariants.stuckResidents, []);
   assert.deepEqual(final.invariants.queueEntriesDueAtEnd, []);
   assert.equal(final.longHorizon.relationshipDynamics.total, 27);
-  assert.ok(final.longHorizon.relationshipDynamics.saturated.length > 0);
+  assert.equal(final.longHorizon.relationshipDynamics.saturated.length, 0);
+  assert.ok(final.longHorizon.relationshipDynamics.decreased > 0);
   assert.ok(final.longHorizon.eventDiversity.topTenShare > 0);
   assert.equal(Object.keys(final.longHorizon.dailyPatterns).length, 15);
   assert.equal(Object.keys(final.longHorizon.personalHistories).length, 15);

@@ -32,10 +32,11 @@ The authored world currently contains:
 - bounded intra-day action queues
 - persistent needs, locations, relationships, and commitments
 - an append-only event history
-- a renewable commitment chain with downstream relationship consequences
+- authored civic commitment chains with explicit parentage, retries, failures, and downstream relationship consequences
+- non-monotonic relationships with tension, repair, and diminishing gains
 - a read-only folio UI with a town register, map, resident pages, histories, and portraits
 
-Most decisions are still scripted on purpose. The current model experiment is deliberately narrow: **Sal D'Amico** can use DeepSeek when deciding what to do about an open commitment involving **Jamie Allen's notice**. The model gets compact context and must return a legal structured choice. If it times out, fails validation, or returns nonsense, deterministic fallback rules take over.
+Most decisions are still scripted on purpose. The current model experiment is deliberately narrow: **Sal D'Amico** can use DeepSeek when deciding what to do about an open commitment, including **Jamie Allen's notice** and a recurring route-report chain that can compete for his time. The model gets compact context and must return a legal structured choice. If it times out, fails validation, or returns nonsense, deterministic fallback rules take over.
 
 This is still an experiment, not a finished artificial society. The current phase is about finding out whether a small world can remain coherent and interesting over long spans of simulated time before adding more people, more model calls, or more machinery.
 
@@ -57,7 +58,9 @@ flowchart LR
     K --> L[Read-only Folio UI]
 ```
 
-A planning turn produces a short ordered plan of at most five actions. The executor schedules those actions through the day and remains authoritative about what actually happens. Hard needs can interrupt an intention. A later planning turn can supersede unfinished work. Commitments can be fulfilled, delayed, missed, and renewed, but every loop has explicit caps.
+A planning turn produces a short ordered plan of at most five actions. The executor schedules those actions through the day and remains authoritative about what actually happens. Hard needs can interrupt an intention. A later planning turn can supersede unfinished work. Commitments can be fulfilled, delayed, missed, retried, and followed by authored downstream requests, but every loop has explicit cooldowns and caps.
+
+Four small civic chains now carry consequences across existing lives and places: clinic repair → school visit → hall record; flour → bread → inn account; dye bundle → loom repair → workshop parts; and route report → closing round. A fulfilled step schedules its follow-up, a delay retries later, and a broken promise ends that cycle before a cooldown. Sal's route report can overlap the clerk's notice, giving the bounded model experiment an actual competing commitment rather than a cost-free “be helpful” button.
 
 There is no hidden resident process and no model-managed clock.
 
@@ -76,7 +79,7 @@ Reports track event volume, resident plans and actions, relationship changes, co
 
 Normal CI and the default scenario command remain deterministic and make no paid calls. Deliberate model evaluation uses the same runner with an asynchronous DeepSeek adapter and an explicit pricing-policy bypass; it is never a browser-accessible mode.
 
-The checked-in evaluation matrix runs eight Sal obligation states three times each: baseline, already at the destination, tired, hungry, low/high trust, and near/distant deadlines. Every case passes through the real planner adapter, validator, queue, executor, and consequence rules. It records proposed choices, executed outcomes, validation fallbacks, request IDs, cache hit/miss tokens, and an estimated bill. With a local key:
+The checked-in evaluation matrix runs eight Sal obligation states three times each: baseline, a competing route report, tired, hungry, low/high trust, and near/distant deadlines. Every case passes through the real planner adapter, validator, queue, executor, and consequence rules. It records proposed choices, executed outcomes, validation fallbacks, request IDs, cache hit/miss tokens, and an estimated bill. With a local key:
 
 ```sh
 DEEPSEEK_API_KEY=... npm run evaluate:model

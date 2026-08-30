@@ -8,6 +8,12 @@ import {
   resolveObligationDecision,
   scriptedObligationPlan,
 } from "./obligations.js";
+import {
+  createDueCivicObligations,
+  normalizeCivicIncidents,
+  recordCivicOutcome,
+} from "./civic-incidents.js";
+import { normalizeRelationship } from "./relationship-dynamics.js";
 import { resolveSocialIntentions } from "./social.js";
 
 const MINUTE_MS = 60 * 1000;
@@ -110,6 +116,8 @@ function defaultStats() {
     obligationCreatedCount: 0,
     obligationResolvedCount: 0,
     obligationFailedCount: 0,
+    civicObligationCreatedCount: 0,
+    conflictedPlanCount: 0,
   };
 }
 
@@ -248,6 +256,8 @@ function normalizeRuntimeState(state) {
   state.obligations = state.obligations.map((obligation) => (
     materializeObligation(obligation, state.startedAt ?? state.now)
   ));
+  state.relationships.forEach(normalizeRelationship);
+  normalizeCivicIncidents(state);
   return state;
 }
 
@@ -418,6 +428,9 @@ function queuePlanActions(state, resident, plan, planAt) {
 }
 
 async function executePlan(state, resident, decisionAdapter, planAt) {
+  const competingObligationCount = state.obligations.filter((obligation) => (
+    obligation.ownerId === resident.id && obligation.status === "open"
+  )).length;
   const rawPlan = await decisionAdapter({
     town: decisionSnapshot(state, planAt),
     resident: { ...resident },
@@ -436,6 +449,7 @@ async function executePlan(state, resident, decisionAdapter, planAt) {
   resident.decisionCount = resident.planCount;
   state.stats.planCount += 1;
   state.stats.decisionCount += 1;
+  if (competingObligationCount > 1) state.stats.conflictedPlanCount += 1;
   if (plan.source === "model") state.stats.modelCalls += 1;
 
   resident.dailyPlan = {
@@ -450,6 +464,7 @@ async function executePlan(state, resident, decisionAdapter, planAt) {
     actions: plan.actions.map((action) => ({ ...action })),
     socialIntentions: plan.socialIntentions.map((intention) => ({ ...intention })),
     obligationDecision: plan.obligationDecision ? { ...plan.obligationDecision } : null,
+    competingObligationCount,
     model: telemetry ? {
       attempted: Boolean(telemetry.attempted),
       fallback: Boolean(telemetry.fallback),
@@ -485,6 +500,7 @@ function appendObligationOutcome(state, outcome, at, source) {
   else if (obligation.status === "fulfilled" || obligation.status === "delayed") {
     state.stats.obligationResolvedCount += 1;
   }
+  recordCivicOutcome(state, obligation, at);
 }
 
 function recordRenewals(state, at) {
@@ -505,11 +521,31 @@ function recordRenewals(state, at) {
   }
 }
 
+function recordCivicRequests(state, at) {
+  const created = createDueCivicObligations(state, at);
+  for (const obligation of created) {
+    state.stats.obligationCreatedCount += 1;
+    state.stats.civicObligationCreatedCount += 1;
+    appendEvent(state, {
+      at,
+      actorId: obligation.ownerId,
+      relatedActorId: obligation.counterpartyId,
+      locationId: obligation.destinationId,
+      obligationId: obligation.id,
+      type: "obligation-created",
+      text: `accepted a civic commitment: ${obligation.title}`,
+      source: "civic-incident",
+      reason: obligation.description,
+    });
+  }
+}
+
 function advanceCausalState(state, at) {
   for (const outcome of expireOverdueObligations(state, at)) {
     appendObligationOutcome(state, outcome, at, "simulation");
   }
   recordRenewals(state, at);
+  recordCivicRequests(state, at);
 }
 
 function executeAction(state, resident, entry, actionAt) {
@@ -519,7 +555,9 @@ function executeAction(state, resident, entry, actionAt) {
 
   if (entry.obligationDecision) {
     const obligation = state.obligations.find(({ id }) => id === entry.obligationDecision.obligationId);
-    const requiredAction = entry.obligationDecision.choice === "fulfill" ? "deliver" : "observe";
+    const requiredAction = entry.obligationDecision.choice === "fulfill"
+      ? obligation?.requiredAction ?? "deliver"
+      : "observe";
     if (actualIntent.action === requiredAction && obligation?.status === "open") {
       const obligationEvent = resolveObligationDecision(state, resident, {
         obligationDecision: entry.obligationDecision,
@@ -555,6 +593,8 @@ function executeAction(state, resident, entry, actionAt) {
       relatedActorId: encounter.targetId,
       locationId: encounter.locationId,
       relationshipId: encounter.relationshipId,
+      relationshipDelta: encounter.relationshipDelta,
+      tensionDelta: encounter.tensionDelta,
       type: encounter.type,
       text: encounter.text,
       source: entry.source,
@@ -625,14 +665,16 @@ export function createInitialTown({
     summary: "A replayable town simulation driven by bounded game-AI rules.",
     locations: seedData.locations.map((location) => ({ ...location })),
     residents: [],
-    relationships: (seedData.relationships ?? []).map((relationship) => ({ ...relationship })),
+    relationships: (seedData.relationships ?? []).map((relationship) => normalizeRelationship({ ...relationship })),
     obligations: (seedData.obligations ?? []).map((obligation) => (
       materializeObligation(obligation, startedAt)
     )),
+    civicIncidents: null,
     events: [],
     stats: defaultStats(),
   };
   state.stats.obligationCreatedCount = state.obligations.length;
+  normalizeCivicIncidents(state);
 
   const ids = seedData.residents.map(({ id }) => id);
   state.residents = seedData.residents.map((residentSeed) => (
@@ -736,9 +778,18 @@ export async function advanceTown(state, {
  * without replacing evolved needs, queues, relationships, or history.
  */
 export function reconcileTownWithSeed(state, { seedData = townSeed } = {}) {
+  const runtimeBackfillNeeded = !state.civicIncidents
+    || (state.relationships ?? []).some((relationship) => (
+      relationship.baselineStrength === undefined
+      || relationship.tension === undefined
+      || relationship.interactionCount === undefined
+    ))
+    || (state.obligations ?? []).some((obligation) => obligation.requiredAction === undefined)
+    || state.stats?.civicObligationCreatedCount === undefined
+    || state.stats?.conflictedPlanCount === undefined;
   const next = normalizeRuntimeState(cloneTown(state));
   const previousSeedRevision = Number(next.seedRevision ?? 0);
-  let metadataChanged = previousSeedRevision !== TOWN_SEED_REVISION;
+  let metadataChanged = previousSeedRevision !== TOWN_SEED_REVISION || runtimeBackfillNeeded;
   const changes = { locations: 0, residents: 0, relationships: 0, obligations: 0 };
   let authoredCopyChanged = false;
 

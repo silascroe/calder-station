@@ -55,7 +55,11 @@ function socialIntentionsFor(town, resident, action) {
       return target ? { relationship, target } : null;
     })
     .filter(Boolean)
-    .sort((left, right) => right.relationship.strength - left.relationship.strength || left.target.id.localeCompare(right.target.id));
+    .sort((left, right) => (
+      (left.relationship.interactionCount ?? 0) - (right.relationship.interactionCount ?? 0)
+      || right.relationship.strength - left.relationship.strength
+      || left.target.id.localeCompare(right.target.id)
+    ));
 
   const preferred = candidates.find(({ target }) => (
     target.locationId === action.locationId || target.workLocationId === action.locationId
@@ -222,7 +226,7 @@ export function validateDailyPlan(plan, { town, resident, now } = {}) {
       throw new TypeError("Obligation decision note must be a non-empty string under 160 characters");
     }
     const hasFulfillAction = plan.actions.some((action) => (
-      action.action === "deliver" && action.locationId === obligation.destinationId
+      action.action === (obligation.requiredAction ?? "deliver") && action.locationId === obligation.destinationId
     ));
     const hasDelayAction = plan.actions.some((action) => action.action === "observe");
     if (decision.choice === "fulfill" && !hasFulfillAction) {

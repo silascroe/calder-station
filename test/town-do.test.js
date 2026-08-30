@@ -140,6 +140,33 @@ test("an existing ten-person projection reconciles and renames without replacing
   assert.equal(storage.sql.eventRows.size, 2);
 });
 
+test("current-revision evolved state persists runtime metadata backfills", async () => {
+  const { town, storage } = makeTown();
+  const evolved = createInitialTown();
+  evolved.residents[0].energy = 37;
+  delete evolved.civicIncidents;
+  delete evolved.stats.civicObligationCreatedCount;
+  delete evolved.stats.conflictedPlanCount;
+  for (const relationship of evolved.relationships) {
+    delete relationship.baselineStrength;
+    delete relationship.tension;
+    delete relationship.interactionCount;
+    delete relationship.lastInteractionAt;
+  }
+  for (const obligation of evolved.obligations) delete obligation.requiredAction;
+  town.persist(evolved);
+
+  const state = await (await town.fetch(new Request("https://town.internal/state"))).json();
+  const persisted = JSON.parse(storage.sql.stateRow.state_json);
+  assert.equal(state.residents[0].energy, 37);
+  assert.ok(state.civicIncidents.chains["care-and-records"]);
+  assert.equal(state.relationships[0].baselineStrength, state.relationships[0].strength);
+  assert.equal(state.obligations[0].requiredAction, "deliver");
+  assert.ok(persisted.civicIncidents.chains["night-route"]);
+  assert.equal(persisted.relationships[0].interactionCount, 0);
+  assert.equal(persisted.stats.conflictedPlanCount, 0);
+});
+
 test("a due Sal decision uses one model plan and records its usage", async () => {
   let calls = 0;
   let requestContext;

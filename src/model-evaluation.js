@@ -1,11 +1,12 @@
 import { DEFAULT_DEEPSEEK_MODEL } from "./deepseek-planner.js";
 import { planResidentDecision } from "./hybrid-planner.js";
+import { materializeObligation } from "./obligations.js";
 import { isPeakPeriod } from "./scheduler.js";
 import { advanceTown, createInitialTown } from "./simulation.js";
 
 const MINUTE_MS = 60 * 1000;
 
-export const MODEL_EVALUATION_REVISION = "sal-obligation-v1-2026-08-30";
+export const MODEL_EVALUATION_REVISION = "sal-competing-obligations-v2-2026-08-30";
 export const MODEL_EVALUATION_REPETITIONS = 3;
 export const MODEL_EVALUATION_CONCURRENCY = 3;
 
@@ -17,7 +18,7 @@ export const DEEPSEEK_V4_FLASH_USD_PER_MILLION = Object.freeze({
 
 const SCENARIOS = Object.freeze([
   Object.freeze({ id: "baseline", energy: 72, hunger: 32, locationId: "square", relationship: 62, dueMinutes: 8 * 60 }),
-  Object.freeze({ id: "already-there", energy: 72, hunger: 32, locationId: "town-hall", relationship: 62, dueMinutes: 8 * 60 }),
+  Object.freeze({ id: "competing-route", energy: 72, hunger: 32, locationId: "square", relationship: 62, dueMinutes: 8 * 60, competingRoute: true }),
   Object.freeze({ id: "tired-and-far", energy: 24, hunger: 32, locationId: "farm", relationship: 62, dueMinutes: 8 * 60 }),
   Object.freeze({ id: "hungry-and-far", energy: 68, hunger: 94, locationId: "farm", relationship: 62, dueMinutes: 8 * 60 }),
   Object.freeze({ id: "low-trust", energy: 72, hunger: 32, locationId: "square", relationship: 18, dueMinutes: 8 * 60 }),
@@ -65,6 +66,20 @@ function prepareCase(scenario, repetition) {
   sal.nextDecisionAt = sal.nextPlanAt;
   obligation.dueAt = new Date(now.getTime() + scenario.dueMinutes * MINUTE_MS).toISOString();
   relationship.strength = scenario.relationship;
+  if (scenario.competingRoute) {
+    state.obligations.push(materializeObligation({
+      id: "evaluation-route-report",
+      kind: "civic-request",
+      ownerId: "sal",
+      counterpartyId: "amos",
+      destinationId: "square",
+      requiredAction: "observe",
+      title: "Amos Foster's route report",
+      description: "Amos needs the square checked before Sal commits to the clerk's detour.",
+      dueAfterMinutes: 12 * 60,
+      renewable: false,
+    }, now));
+  }
 
   return { state, planAt, salId: sal.id, obligationId: obligation.id };
 }
@@ -115,12 +130,14 @@ async function evaluateCase({ scenario, repetition, env, fetchImpl, wallClock })
       locationId: scenario.locationId,
       relationship: scenario.relationship,
       dueMinutes: scenario.dueMinutes,
+      competingRoute: scenario.competingRoute === true,
     },
     source: sal.dailyPlan?.source ?? null,
     choice: sal.dailyPlan?.obligationDecision?.choice ?? null,
     reason: sal.dailyPlan?.reason ?? null,
     note: sal.dailyPlan?.obligationDecision?.note ?? null,
     executedOutcome: obligation.status,
+    competingObligationCount: sal.dailyPlan?.competingObligationCount ?? 0,
     fallback: Boolean(model.fallback),
     errorCode: model.errorCode ?? null,
     model: model.model ?? env.DEEPSEEK_MODEL ?? DEFAULT_DEEPSEEK_MODEL,
