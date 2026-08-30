@@ -78,13 +78,16 @@ h3 { margin: 0; font-size: 24px; }
 .resident-card h3 a:hover { color: var(--accent); }
 .energy { color: var(--green); font-size: 11px; white-space: nowrap; }
 .resident-status { min-height: 50px; margin: 25px 0 20px; color: var(--ink); line-height: 1.5; }
-.resident-meta { display: flex; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+.resident-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 12px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
 
 .event-feed { padding: 0; margin: 0; list-style: none; border-top: 1px solid var(--line); }
 .event-row { display: grid; grid-template-columns: 58px 14px 1fr; align-items: baseline; gap: 15px; padding: 16px 0; border-bottom: 1px solid var(--line); }
 .event-time { color: var(--dim); font: 12px var(--sans); }
 .event-marker { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 .event-marker-observation { background: var(--blue); }
+.event-marker-movement { background: var(--blue); }
+.event-marker-decision { background: var(--green); }
+.event-marker-system { background: var(--dim); }
 .event-row p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
 .event-row strong { color: var(--ink); font-weight: 600; }
 

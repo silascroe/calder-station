@@ -18,6 +18,11 @@ function residentById(id) {
   return store.town?.residents.find((resident) => resident.id === id);
 }
 
+function residentTime(value) {
+  if (!value) return "—";
+  return `${value.slice(11, 16)} UTC`;
+}
+
 function residentCard(resident) {
   return `
     <article class="resident-card">
@@ -32,6 +37,7 @@ function residentCard(resident) {
       <div class="resident-meta">
         <span>${escapeHtml(resident.location)}</span>
         <span>${escapeHtml(resident.mood)}</span>
+        <span>next ${escapeHtml(residentTime(resident.nextDecisionAt))}</span>
       </div>
     </article>
   `;
@@ -80,6 +86,14 @@ function renderOverview() {
         <div class="clock-meta">
           <span>Residents</span>
           <strong>${escapeHtml(town.residents.length)}</strong>
+        </div>
+        <div class="clock-meta">
+          <span>Ticks simulated</span>
+          <strong>${escapeHtml(town.stats.tickCount)}</strong>
+        </div>
+        <div class="clock-meta">
+          <span>Rule decisions</span>
+          <strong>${escapeHtml(town.stats.decisionCount)}</strong>
         </div>
       </div>
     </section>
@@ -131,7 +145,7 @@ function renderMap() {
     .join("");
 
   app.innerHTML = `
-    ${pageHeader("Rookwood / spatial view", "The map", "A simple location view now; a real world map later.")}
+    ${pageHeader("Rookwood / spatial view", "The map", "A deterministic location view now; a real world map later.")}
     <section class="map-card">
       <div class="map-grid"></div>
       <div class="map-road road-one"></div>
@@ -174,6 +188,8 @@ function renderResidentDetail(id) {
           <div><span>mood</span><strong>${escapeHtml(resident.mood)}</strong></div>
           <div><span>energy</span><strong>${escapeHtml(resident.energy)}%</strong></div>
           <div><span>location</span><strong>${escapeHtml(resident.location)}</strong></div>
+          <div><span>next decision</span><strong>${escapeHtml(residentTime(resident.nextDecisionAt))}</strong></div>
+          <div><span>decisions made</span><strong>${escapeHtml(resident.decisionCount)}</strong></div>
         </div>
       </article>
       <article class="detail-events">

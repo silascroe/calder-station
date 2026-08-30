@@ -1,4 +1,9 @@
-import { demoEvents, demoTown } from "./demo-data.js";
+import {
+  eventView,
+  previewOptions,
+  runPreview,
+  townView,
+} from "./simulation.js";
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -13,7 +18,11 @@ function json(data, status = 200) {
 }
 
 function methodNotAllowed() {
-  return json({ error: "Only GET is supported by the demo API." }, 405);
+  return json({ error: "Only GET is supported by the read-only API." }, 405);
+}
+
+function previewFromUrl(url) {
+  return runPreview(previewOptions(url));
 }
 
 export default {
@@ -23,27 +32,44 @@ export default {
     if (url.pathname.startsWith("/api/")) {
       if (request.method !== "GET") return methodNotAllowed();
 
-      if (url.pathname === "/api/health") {
-        return json({
-          ok: true,
-          service: "town-dashboard",
-          mode: "demo",
-          serverTime: new Date().toISOString(),
-        });
-      }
+      try {
+        if (url.pathname === "/api/health") {
+          const state = previewFromUrl(url);
+          return json({
+            ok: true,
+            service: "town-dashboard",
+            mode: state.mode,
+            engine: "deterministic-scripted",
+            persistence: state.persistence,
+            tickCount: state.stats.tickCount,
+            modelCalls: state.stats.modelCalls,
+            serverTime: new Date().toISOString(),
+          });
+        }
 
-      if (url.pathname === "/api/town") {
-        return json({ ...demoTown, serverTime: new Date().toISOString() });
-      }
+        if (url.pathname === "/api/town") {
+          return json(townView(previewFromUrl(url)));
+        }
 
-      if (url.pathname === "/api/events") {
-        return json({ events: demoEvents });
-      }
+        if (url.pathname === "/api/events") {
+          const state = previewFromUrl(url);
+          return json({
+            events: eventView(state),
+            tickCount: state.stats.tickCount,
+            persistence: state.persistence,
+          });
+        }
 
-      return json({ error: "API route not found." }, 404);
+        return json({ error: "API route not found." }, 404);
+      } catch (error) {
+        if (error instanceof RangeError || error instanceof TypeError) {
+          return json({ error: error.message }, 400);
+        }
+        throw error;
+      }
     }
 
-    if (!env.ASSETS) {
+    if (!env?.ASSETS) {
       return new Response("Static asset binding is not configured.", { status: 500 });
     }
 

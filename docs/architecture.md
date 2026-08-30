@@ -13,6 +13,10 @@ The town should be built as a simulation with an occasional language-model decis
 
 The model returns intent. The simulation remains the authority on what actually happened.
 
+## Current implementation slice
+
+The repository currently implements the loop without a model: a seeded Rookwood state advances in hourly ticks, applies simple need changes, wakes residents at staggered routine slots, asks a scripted decision policy for an intent, validates and resolves that intent, and appends movement and decision events. `runPreview()` replays the same sequence from the same inputs, while the Worker exposes state and newest-first events as read-only projections. The preview is intentionally ephemeral and makes zero model calls. The seed is recorded as replay metadata; deterministic behavior comes from the rules and roster for now, with randomness deferred until it can be tested explicitly.
+
 ## Scheduling policy
 
 The current scheduler encodes DeepSeek's published UTC peak windows for weekdays: 01:00–04:00 and 06:00–10:00. Routine decisions requested during those windows move to the end of the window. Urgent decisions can bypass the delay.
@@ -50,8 +54,8 @@ The dashboard is a separate read-only window into the simulation. It should cons
 
 The first useful surface is deliberately small: a town overview, a resident list, a map-like location view, and a chronological event feed. Client-side routes such as `/map` and `/residents/mara` can exist before the simulation is real by rendering fixture data. This gives the project a visible feedback loop without coupling the UI to unfinished storage.
 
-When the town is remote, the same dashboard can read `/api/town` and `/api/events`. Polling is sufficient for a tiny town. A live stream can be added later without changing the page-level route model.
+The deployed dashboard reads `/api/town` and `/api/events`. It currently receives a deterministic preview recomputed per request, which is enough to exercise the viewer without pretending that persistence exists. Polling will be sufficient for a tiny persistent town. A live stream can be added later without changing the page-level route model.
 
 ## Infrastructure direction
 
-For a small deployment, one coordinator plus durable storage is enough. Residents should be rows or records, not one Durable Object and one workflow per personality by default. Cloudflare adapters can be added after the pure simulation works locally; infrastructure should provide durability and wake-ups, not hide the domain rules.
+For a small deployment, one coordinator plus durable storage is enough. Residents should be rows or records, not one Durable Object and one workflow per personality by default. The next infrastructure slice is D1 for the event log and state projection, followed by one coordinator heartbeat. Cloudflare adapters should provide durability and wake-ups, not hide the domain rules.

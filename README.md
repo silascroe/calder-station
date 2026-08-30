@@ -2,7 +2,7 @@
 
 Town is an experiment in persistent multi-agent simulation: a small world with residents, routines, relationships, resources, and consequences that continue while nobody is looking.
 
-This repository is deliberately at the foundation stage. It does not call an AI API or pretend that a collection of prompts is a society. It now includes a tiny Cloudflare Worker and dashboard shell so the project has a visible front door while the simulation is still being built.
+This repository is deliberately at the foundation stage. It does not call an AI API or pretend that a collection of prompts is a society. It now includes a tiny deterministic simulation, a read-only event feed, and a Cloudflare dashboard so the project has a visible front door while persistence and model decisions are still being built.
 
 ## Design constraints
 
@@ -14,6 +14,7 @@ This repository is deliberately at the foundation stage. It does not call an AI 
 - Every future side effect should be validated by the simulation before it changes world state.
 - The town should remain interesting with a small population. Bigger is not automatically better.
 - The dashboard is read-only until the simulation and event model are trustworthy.
+- The current scripted preview is reproducible and makes zero model calls.
 
 ## Run the tests
 
@@ -29,15 +30,33 @@ There are no dependencies to install for the current foundation.
 npx wrangler dev
 ```
 
-The local Worker serves the dashboard and its demo API. The current shell has routes for `/`, `/map`, `/residents`, and individual resident pages. It is intentionally demo data, not a running town.
+The local Worker serves the dashboard and its read-only simulation API. The current shell has routes for `/`, `/map`, `/residents`, and individual resident pages. The API renders the same seeded first-day preview on each request; it is not persistent yet.
+
+## Current simulation slice
+
+The first slice runs three residents through a deterministic 22-hour preview. Each resident receives a staggered routine decision slot, returns a scripted intent, moves if necessary, and updates bounded needs such as energy and hunger. Accepted actions become compact events. The dashboard reads a state projection and newest-first event feed from `/api/town` and `/api/events`.
+
+The preview records a seed as replay metadata, but does not use randomness yet. That is deliberate: deterministic rules are easier to inspect and test before stochastic variation is introduced.
+
+For inspection, the preview length can be changed without mutating the town:
+
+```text
+/api/town?ticks=0
+/api/events?ticks=12
+```
+
+The API accepts `ticks` from `0` through `48`. This is an ephemeral preview, so reloading the page recomputes the same state rather than advancing a remote town.
 
 ## Repository layout
 
 - `src/scheduler.js` — pure scheduling policy; no network or platform code.
-- `src/worker.js` — the Cloudflare Worker entry point and demo read-only API.
-- `src/demo-data.js` — temporary three-resident fixture data for the dashboard.
+- `src/worker.js` — the Cloudflare Worker entry point and read-only simulation API.
+- `src/simulation.js` — state creation, ticking, event creation, replay, and API projections.
+- `src/scripted-decisions.js` — ordinary rule-based game AI; no model calls.
+- `src/demo-data.js` — the current Rookwood seed data.
 - `public/` — the static dashboard shell and client-side routes.
 - `test/scheduler.test.js` — executable examples for peak-hour deferral and staggered daily decisions.
+- `test/simulation.test.js` — replay, scheduling, event, and state-invariant tests.
 - `test/worker.test.js` — API and asset-routing tests for the Worker entry point.
 - `docs/architecture.md` — the boundary between deterministic simulation, model decisions, memory, and infrastructure.
 
@@ -52,4 +71,4 @@ Run **Deploy Town Dashboard** from the repository's Actions tab. The DeepSeek ke
 
 ## What comes next
 
-The next useful slice is a deterministic world state with an event log and a mock decision adapter. The dashboard should then read that event log instead of the fixture. Only after that should the project add resident memory and a real model client. The model should plug into the simulation rather than become the simulation.
+The next useful slice is durable storage: persist the event log and current projection in D1, then give one coordinator a heartbeat without putting world rules in the request handler. Only after replay and persistence are solid should one resident receive a real DeepSeek decision adapter. The model should plug into the simulation rather than become the simulation.
