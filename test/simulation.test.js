@@ -50,8 +50,8 @@ test("the town seed creates fifteen integrated residents, places, and relationsh
   }
 });
 
-test("a preview advances the clock and lets each resident make a decision", () => {
-  const town = runPreview();
+test("a preview advances the clock and lets each resident make a decision", async () => {
+  const town = await runPreview();
   const decisions = town.events.filter((event) => event.type === "decision");
   const movements = town.events.filter((event) => event.type === "movement");
 
@@ -83,8 +83,8 @@ test("a preview advances the clock and lets each resident make a decision", () =
   assert.equal(town.residents.find(({ id }) => id === "pella").lastEncounterWithId, "thom");
 });
 
-test("the second day exercises ordinary meal and rest rules", () => {
-  const town = runPreview({ ticks: 48 });
+test("the second day exercises ordinary meal and rest rules", async () => {
+  const town = await runPreview({ ticks: 48 });
   const decisions = town.events.filter((event) => event.type === "decision");
 
   assert.equal(town.stats.decisionCount, 30);
@@ -95,8 +95,8 @@ test("the second day exercises ordinary meal and rest rules", () => {
   assert.ok(town.stats.encounterCount >= 3);
 });
 
-test("the tiny seed remains available as a compact regression scenario", () => {
-  const town = runPreview({ ticks: 22, seedData: tinyTownSeed });
+test("the tiny seed remains available as a compact regression scenario", async () => {
+  const town = await runPreview({ ticks: 22, seedData: tinyTownSeed });
 
   assert.equal(town.residents.length, 3);
   assert.equal(town.locations.length, 4);
@@ -105,16 +105,16 @@ test("the tiny seed remains available as a compact regression scenario", () => {
   assert.ok(town.stats.actionCount > town.stats.planCount);
 });
 
-test("the same seed produces the same state and event history", () => {
-  const first = runPreview({ ticks: 22, seed: "test-seed" });
-  const second = runPreview({ ticks: 22, seed: "test-seed" });
+test("the same seed produces the same state and event history", async () => {
+  const first = await runPreview({ ticks: 22, seed: "test-seed" });
+  const second = await runPreview({ ticks: 22, seed: "test-seed" });
 
   assert.deepEqual(first, second);
 });
 
-test("advancing a town does not mutate the previous snapshot", () => {
+test("advancing a town does not mutate the previous snapshot", async () => {
   const initial = createInitialTown();
-  const next = advanceTown(initial);
+  const next = await advanceTown(initial);
 
   assert.equal(initial.now, DEFAULT_START_TIME);
   assert.equal(initial.stats.tickCount, 0);
@@ -122,8 +122,8 @@ test("advancing a town does not mutate the previous snapshot", () => {
   assert.notEqual(next.residents, initial.residents);
 });
 
-test("views keep town state and newest-first events separate", () => {
-  const state = runPreview();
+test("views keep town state and newest-first events separate", async () => {
+  const state = await runPreview();
   const town = townView(state);
   const events = eventView(state);
 

@@ -6,7 +6,7 @@ Calder Station is a simulation with an occasional language-model decision layer,
 
 1. Advance the world clock and apply deterministic needs and timing.
 2. Pull residents whose planning turn is due.
-3. Ask an eligible adapter for a bounded daily plan.
+3. Await an eligible adapter for a bounded daily plan at that exact simulated instant.
 4. Validate the plan against the current town.
 5. Put its finite action intentions into the resident's queue.
 6. Execute queued actions at their scheduled times, applying movement, legality, interruption, social resolution, and consequences in ordinary code.
@@ -56,7 +56,11 @@ The seed, start time, authored rules, and deterministic adapter make a replay co
 
 ## Model policy
 
-The adapter is eligible only for the current Sal commitment experiment. It receives a compact state snapshot and recent events, returns JSON with a small output budget, and has a typed timeout/provider/validation failure path. A fallback plan is selected by deterministic rules. Usage and fallback status become projection statistics and events.
+The adapter is eligible only for the current Sal commitment experiment. It receives a compact authoritative state snapshot and recent events at Sal's actual planning instant, returns JSON with a small output budget, and has a typed timeout/provider/validation failure path. A fallback plan is selected by deterministic rules. Usage and fallback status become projection statistics and events.
+
+`advanceTown` and the scenario runner are asynchronous, but there is still one authoritative execution path. Deterministic adapters resolve immediately; paid adapters are awaited before validation and queueing. The engine therefore cannot prefetch intent from stale state while other residents, needs, expiries, or relationship changes are still pending before the planning turn.
+
+Provider pricing policy uses injected real wall-clock time. Calder Station's simulated date never determines whether a call is peak-priced. Routine autonomous calls are skipped during DeepSeek's published weekday 01:00–04:00 and 06:00–10:00 UTC peak windows; deliberate evaluation has an explicit bypass. Time injection keeps normal tests independent of the actual hour. As verified on 2026-08-30, `deepseek-v4-flash` is $0.22/M cache-miss input and $0.66/M output tokens off-peak, with peak rates twice those amounts.
 
 Routine mechanics remain scripted. More model-eligible incident classes should wait until the first one is easy to explain from the event history and long-horizon reports.
 

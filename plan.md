@@ -17,7 +17,7 @@ Success means a fresh staging Calder Station can run for 90 simulated days, prod
 
 - The deployed staging Worker is currently ephemeral: its named Wrangler environment omitted the non-inherited `TOWN` binding. The repository fix now declares the binding explicitly, rejects configured Workers that lack it, validates deployment configuration, and smoke-tests persistence after deployment. Staging still needs redeployment before this is true live.
 - The deterministic baseline is stable but repetitive. At Day 90 it produces 6,176 events and healthy bounds, but most residents have only 7–11 distinct daily action signatures, relationship change is entirely net-positive, social activity reaches only 13 of 27 ties, and one Sal/Jamie series accounts for 56 near-identical commitments.
-- The synchronous runner does not exercise DeepSeek, and the persistent adapter currently requests a plan before the engine reaches the exact planning instant. The next architecture layer is an asynchronous planning boundary at authoritative simulated time, followed by deliberate paid staging evaluation.
+- The simulation and long-horizon runner now share an asynchronous planner boundary. Model intent is requested at the exact authoritative planning instant rather than prefetched from state at the beginning of an hourly alarm. Deterministic CI remains no-cost; deliberate paid staging evaluation is the next evidence layer.
 - Current DeepSeek documentation lists weekday peak windows at 01:00–04:00 and 06:00–10:00 UTC, with off-peak pricing at half the peak rate. Scheduled production calls should retain that policy; deliberate evaluation needs an explicit bypass.
 
 ## What is deliberately true now
@@ -29,10 +29,9 @@ The action queue is intentionally finite: each plan has at most five actions, ea
 ## Next useful work
 
 1. Redeploy and verify persistent staging without touching production state.
-2. Move model planning to the exact authoritative planning instant and add an async same-engine scenario path.
-3. Run enough genuine DeepSeek cases to measure validity, choice distribution, token use, cost, and sensitivity to changed circumstances.
-4. Replace the mechanical notice conveyor with the smallest conflict/resource mechanics that create explainable positive and negative downstream consequences.
-5. Expose meaningful longitudinal changes through the Folio rather than adding internal counters to the public surface.
+2. Redeploy staging and run enough genuine DeepSeek cases to measure validity, choice distribution, token use, cost, and sensitivity to changed circumstances.
+3. Replace the mechanical notice conveyor with the smallest conflict/resource mechanics that create explainable positive and negative downstream consequences.
+4. Expose meaningful longitudinal changes through the Folio rather than adding internal counters to the public surface.
 
 ## Deferred
 

@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { runScenario } from "../src/scenario-runner.js";
+import { scriptedObligationPlan } from "../src/obligations.js";
 
-test("the staging runner reports useful 1, 7, 30, and 90 day checkpoints", () => {
-  const result = runScenario({
+test("the staging runner reports useful 1, 7, 30, and 90 day checkpoints", async () => {
+  const result = await runScenario({
     days: 90,
     checkpoints: [1, 7, 30, 90],
     seed: "long-horizon-regression",
@@ -33,18 +34,34 @@ test("the staging runner reports useful 1, 7, 30, and 90 day checkpoints", () =>
   assert.deepEqual(final.invariants.queueEntriesDueAtEnd, []);
 });
 
-test("the same seed and rules produce the same long-horizon report", () => {
+test("the same seed and rules produce the same long-horizon report", async () => {
   const options = { days: 30, checkpoints: [1, 7, 30], seed: "replay-check" };
-  const first = runScenario(options);
-  const second = runScenario(options);
+  const first = await runScenario(options);
+  const second = await runScenario(options);
 
   assert.deepEqual(first.final, second.final);
   assert.deepEqual(first.checkpoints, second.checkpoints);
 });
 
-test("the runner can execute a short custom horizon without requiring every default checkpoint", () => {
-  const result = runScenario({ days: 3 });
+test("the runner can execute a short custom horizon without requiring every default checkpoint", async () => {
+  const result = await runScenario({ days: 3 });
   assert.deepEqual(Object.keys(result.checkpoints), ["1"]);
   assert.equal(result.final.stats.tickCount, 3);
+  assert.equal(result.final.healthy, true);
+});
+
+test("the runner awaits an asynchronous planner through the authoritative engine", async () => {
+  let calls = 0;
+  const result = await runScenario({
+    days: 1,
+    decisionAdapter: async (input) => {
+      calls += 1;
+      await Promise.resolve();
+      return scriptedObligationPlan(input);
+    },
+  });
+
+  assert.equal(calls, 15);
+  assert.equal(result.final.stats.plans, 15);
   assert.equal(result.final.healthy, true);
 });

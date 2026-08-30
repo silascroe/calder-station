@@ -71,9 +71,9 @@ test("the plan boundary validates effective queue offsets, including omitted off
   }, { town, resident, now }), /non-decreasing/);
 });
 
-test("a future model planner can use the same boundary without changing the executor", () => {
+test("a future model planner can use the same boundary without changing the executor", async () => {
   const initial = createInitialTown();
-  const next = advanceTown(initial, {
+  const next = await advanceTown(initial, {
     minutes: 1440,
     decisionAdapter: ({ town, resident, now }) => ({
       ...scriptedDailyPlan({ town, resident, now }),

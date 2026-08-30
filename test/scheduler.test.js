@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   isPeakPeriod,
+  modelCallPolicy,
   nextOffPeak,
   offPeakWindowsForDay,
   scheduleDecision,
@@ -33,6 +34,20 @@ test("routine decisions wait for the current peak window to end", () => {
     scheduleDecision({ requestedAt: "2026-08-31T08:45:00Z", priority: "urgent" }).toISOString(),
     "2026-08-31T08:45:00.000Z",
   );
+});
+
+test("model cost policy uses injected wall time and supports deliberate evaluation bypass", () => {
+  const peak = modelCallPolicy({ wallClock: "2026-08-31T02:15:00Z" });
+  assert.equal(peak.allowed, false);
+  assert.equal(peak.reason, "peak-pricing-window");
+  assert.equal(peak.nextEligibleAt.toISOString(), "2026-08-31T04:00:00.000Z");
+
+  const bypass = modelCallPolicy({
+    wallClock: "2026-08-31T02:15:00Z",
+    bypassPeakPricing: true,
+  });
+  assert.equal(bypass.allowed, true);
+  assert.equal(bypass.reason, "evaluation-bypass");
 });
 
 test("weekends are entirely available for routine work", () => {
@@ -69,4 +84,3 @@ test("the same roster and day produce the same plan", () => {
     second.map(({ residentId, scheduledAt }) => [residentId, scheduledAt.toISOString()]),
   );
 });
-

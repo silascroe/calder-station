@@ -44,7 +44,7 @@ function parseArgs(argv) {
 
 try {
   const options = parseArgs(process.argv.slice(2));
-  const result = runScenario({
+  const result = await runScenario({
     days: Math.max(...options.days),
     checkpoints: options.days,
     seed: options.seed,

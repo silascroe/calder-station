@@ -299,7 +299,7 @@ function normalizeCheckpoints(checkpoints, days) {
   return values;
 }
 
-export function runScenario({
+export async function runScenario({
   days = 90,
   checkpoints,
   seed = "calder-station-long-horizon",
@@ -336,7 +336,7 @@ export function runScenario({
   const ticks = days * DAY_MINUTES / tickMinutes;
 
   for (let tick = 0; tick < ticks; tick += 1) {
-    state = advanceTown(state, { minutes: tickMinutes, decisionAdapter });
+    state = await advanceTown(state, { minutes: tickMinutes, decisionAdapter });
     updateExtremes(extremes, state);
     const completedDays = ((tick + 1) * tickMinutes) / DAY_MINUTES;
     while (checkpointIndex < checkpointDays.length && checkpointDays[checkpointIndex] <= completedDays) {

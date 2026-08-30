@@ -15,7 +15,7 @@ import {
   openObligationFor,
   scriptedObligationPlan,
 } from "./obligations.js";
-import { isPeakPeriod } from "./scheduler.js";
+import { modelCallPolicy } from "./scheduler.js";
 import {
   createDeepSeekPlan,
   DEFAULT_DEEPSEEK_MODEL,
@@ -95,16 +95,6 @@ function eventLimit(url) {
     throw new RangeError(`limit must be between 1 and ${MAX_EVENT_LIMIT}`);
   }
   return limit;
-}
-
-function dueWithin(state, residentId, minutes) {
-  const resident = state.residents.find(({ id }) => id === residentId);
-  const nextPlanAt = resident?.nextPlanAt ?? resident?.nextDecisionAt;
-  if (!nextPlanAt) return null;
-  const planAt = new Date(nextPlanAt);
-  const horizon = new Date(new Date(state.now).getTime() + minutes * 60 * 1000);
-  if (Number.isNaN(planAt.getTime()) || planAt > horizon) return null;
-  return { resident, decisionAt: planAt };
 }
 
 function migrateStoredEvents(sql, previousSeedRevision) {
@@ -293,6 +283,7 @@ export class RookwoodTown {
           modelCalls: state.stats.modelCalls,
           modelAttempts: state.stats.modelAttempts,
           modelFallbacks: state.stats.modelFallbacks,
+          modelCostSkips: state.stats.modelCostSkips,
           modelPromptTokens: state.stats.modelPromptTokens,
           modelCompletionTokens: state.stats.modelCompletionTokens,
           alarmAt: alarmAt === null ? null : new Date(alarmAt).toISOString(),
@@ -309,59 +300,59 @@ export class RookwoodTown {
     }
   }
 
-  async modelPlanFor(state, { wallClock = new Date() } = {}) {
-    if (!this.env?.DEEPSEEK_API_KEY) return null;
-    if (isPeakPeriod(wallClock)) return null;
+  async decisionPlanFor({ town, resident, now }, {
+    wallClock = new Date(),
+    bypassPeakPricing = false,
+  } = {}) {
+    const scripted = () => scriptedObligationPlan({ town, resident, now });
+    if (!this.env?.DEEPSEEK_API_KEY || resident.id !== MODEL_RESIDENT_ID) return scripted();
 
-    const due = dueWithin(state, MODEL_RESIDENT_ID, SIMULATION_STEP_MINUTES);
-    if (!due || !openObligationFor(state, due.resident.id)) return null;
+    const obligation = openObligationFor(town, resident.id);
+    if (!obligation) return scripted();
+
+    const policy = modelCallPolicy({ wallClock, bypassPeakPricing });
+    if (!policy.allowed) {
+      return {
+        ...scripted(),
+        modelTelemetry: {
+          attempted: false,
+          fallback: false,
+          skipped: true,
+          policyReason: policy.reason,
+          model: this.env.DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL,
+        },
+      };
+    }
 
     try {
       const plan = await createDeepSeekPlan({
-        state,
-        resident: due.resident,
-        now: due.decisionAt,
-        obligation: openObligationFor(state, due.resident.id),
+        state: town,
+        resident,
+        now,
+        obligation,
         env: this.env,
         fetchImpl: this.env.DEEPSEEK_FETCH ?? globalThis.fetch,
       });
-      return { decisionAt: due.decisionAt.toISOString(), plan };
+      return plan;
     } catch (error) {
       return {
-        decisionAt: due.decisionAt.toISOString(),
-        plan: {
-          ...scriptedObligationPlan({
-            town: state,
-            resident: due.resident,
-            now: due.decisionAt,
-          }),
-          modelTelemetry: {
-            attempted: true,
-            fallback: true,
-            model: this.env.DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL,
-            ...(error.telemetry ?? {}),
-            errorCode: error.code ?? "request_failed",
-          },
+        ...scripted(),
+        modelTelemetry: {
+          attempted: true,
+          fallback: true,
+          model: this.env.DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL,
+          ...(error.telemetry ?? {}),
+          errorCode: error.code ?? "request_failed",
         },
       };
     }
   }
 
-  async alarm() {
+  async alarm({ wallClock = new Date() } = {}) {
     const state = await this.load();
-    const modelRun = await this.modelPlanFor(state);
-    const next = advanceTown(state, {
+    const next = await advanceTown(state, {
       minutes: SIMULATION_STEP_MINUTES,
-      decisionAdapter: ({ town, resident, now }) => {
-        if (
-          modelRun
-          && resident.id === MODEL_RESIDENT_ID
-          && now.toISOString() === modelRun.decisionAt
-        ) {
-          return modelRun.plan;
-        }
-        return scriptedObligationPlan({ town, resident, now });
-      },
+      decisionAdapter: (input) => this.decisionPlanFor(input, { wallClock }),
     });
     next.environment = this.environment;
     next.mode = modeFor(this.environment);

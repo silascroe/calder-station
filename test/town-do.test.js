@@ -140,10 +140,14 @@ test("an existing ten-person projection reconciles and renames without replacing
 
 test("a due Sal decision uses one model plan and records its usage", async () => {
   let calls = 0;
+  let requestContext;
   const { town, storage } = makeTown({
     DEEPSEEK_API_KEY: "test-key",
-    DEEPSEEK_FETCH: async () => {
+    DEEPSEEK_FETCH: async (_url, init) => {
       calls += 1;
+      const body = JSON.parse(init.body);
+      const prompt = body.messages.at(-1).content;
+      requestContext = JSON.parse(prompt.slice(prompt.indexOf("\n") + 1));
       return new Response(JSON.stringify({
         id: "chatcmpl-town-test",
         model: "deepseek-v4-flash",
@@ -174,7 +178,7 @@ test("a due Sal decision uses one model plan and records its usage", async () =>
   initial.residents.find(({ id }) => id === "sal").nextDecisionAt = "2026-08-31T00:30:00.000Z";
   town.persist(initial);
 
-  await town.alarm();
+  await town.alarm({ wallClock: new Date("2026-08-31T00:00:00.000Z") });
   const state = await (await town.fetch(new Request("https://town.internal/state"))).json();
 
   assert.equal(calls, 1);
@@ -185,6 +189,9 @@ test("a due Sal decision uses one model plan and records its usage", async () =>
   assert.equal(state.stats.modelCompletionTokens, 80);
   assert.equal(state.obligations[0].status, "fulfilled");
   assert.equal(state.residents.find(({ id }) => id === "sal").dailyPlan.source, "model");
+  assert.equal(requestContext.town.now, "2026-08-31T00:30:00.000Z");
+  assert.equal(requestContext.resident.energy, 86);
+  assert.equal(requestContext.resident.hunger, 23);
   assert.ok([...storage.sql.eventRows.values()].some(({ event_json }) => JSON.parse(event_json).source === "model"));
 });
 
@@ -201,7 +208,7 @@ test("a failed model request falls back without stopping the town", async () => 
   initial.residents.find(({ id }) => id === "sal").nextDecisionAt = "2026-08-31T00:30:00.000Z";
   town.persist(initial);
 
-  await town.alarm();
+  await town.alarm({ wallClock: new Date("2026-08-31T00:00:00.000Z") });
   const state = await (await town.fetch(new Request("https://town.internal/state"))).json();
   const events = [...storage.sql.eventRows.values()].map(({ event_json }) => JSON.parse(event_json));
 
@@ -224,13 +231,40 @@ test("the model experiment defers its request during a provider peak window", as
     },
   });
   const initial = createInitialTown();
-  initial.residents.find(({ id }) => id === "sal").nextPlanAt = "2026-09-01T02:30:00.000Z";
-  initial.residents.find(({ id }) => id === "sal").nextDecisionAt = "2026-09-01T02:30:00.000Z";
+  const resident = initial.residents.find(({ id }) => id === "sal");
+  const now = new Date(resident.nextPlanAt);
 
-  const result = await town.modelPlanFor(initial, { wallClock: new Date("2026-09-01T02:00:00.000Z") });
+  const result = await town.decisionPlanFor(
+    { town: initial, resident, now },
+    { wallClock: new Date("2026-09-01T02:00:00.000Z") },
+  );
 
-  assert.equal(result, null);
+  assert.equal(result.source, "scripted");
+  assert.equal(result.modelTelemetry.skipped, true);
+  assert.equal(result.modelTelemetry.policyReason, "peak-pricing-window");
   assert.equal(calls, 0);
+});
+
+test("deliberate evaluation can bypass peak pricing without changing simulated time", async () => {
+  let calls = 0;
+  const { town } = makeTown({
+    DEEPSEEK_API_KEY: "test-key",
+    DEEPSEEK_FETCH: async () => {
+      calls += 1;
+      throw new Error("provider unavailable");
+    },
+  });
+  const initial = createInitialTown();
+  const resident = initial.residents.find(({ id }) => id === "sal");
+  const now = new Date(resident.nextPlanAt);
+  const result = await town.decisionPlanFor(
+    { town: initial, resident, now },
+    { wallClock: new Date("2026-09-01T02:00:00.000Z"), bypassPeakPricing: true },
+  );
+
+  assert.equal(calls, 1);
+  assert.equal(result.modelTelemetry.attempted, true);
+  assert.equal(result.modelTelemetry.fallback, true);
 });
 
 test("staging uses a separate durable-object storage key and mode", async () => {

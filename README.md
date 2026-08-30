@@ -65,7 +65,7 @@ There is no hidden resident process and no model-managed clock.
 
 The interesting question is not whether Calder Station looks plausible for five minutes. It is whether the rules still make sense after a week, a month, or a season.
 
-The scenario runner starts a fresh in-memory town and advances the **same simulation engine used by production** through requested checkpoints:
+The scenario runner starts a fresh in-memory town and advances the **same asynchronous simulation engine used by production** through requested checkpoints. Planner adapters are awaited at the exact simulated planning instant, after earlier world work has been applied:
 
 ```sh
 npm run scenario -- --days 1,7,30,90
@@ -73,6 +73,8 @@ npm run scenario -- --days 90 --seed another-replay --json
 ```
 
 Reports track event volume, resident plans and actions, relationship changes, commitment outcomes and generations, activity by place, model attempts and fallbacks, token use, need ranges, queue state, and invariant failures. Runs are seedable and replayable so rule changes can be compared without inventing a second fake simulation for testing.
+
+Normal CI and the default scenario command remain deterministic and make no paid calls. Deliberate model evaluation uses the same runner with an asynchronous DeepSeek adapter and an explicit pricing-policy bypass; it is never a browser-accessible mode.
 
 The current milestone is simple: a fresh Calder Station should survive 90 simulated days and accumulate understandable causal differences instead of producing ninety copies of the same day.
 
@@ -116,6 +118,8 @@ Deployment is intentionally manual through GitHub Actions.
 - `staging` deploys `town-dashboard-staging` with isolated disposable state.
 
 Both environments use `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. `DEEPSEEK_API_KEY` is stored as a Cloudflare Worker secret only in environments that should make model calls; it is never sent to the browser.
+
+Routine autonomous calls follow DeepSeek's published weekday peak windows using the real request time, not Calder Station's simulated clock. As verified on 2026-08-30, `deepseek-v4-flash` off-peak rates are $0.22 per million cache-miss input tokens and $0.66 per million output tokens; weekday peak rates are double. Intentional evaluation can bypass the cost guard without changing simulated time.
 
 Wrangler does not inherit Durable Object bindings into named environments, so production and staging each declare `TOWN` explicitly. The workflow validates that configuration before deployment and then smoke-tests the deployed `/api/health` and `/api/town` responses. A configured production or staging Worker without its expected binding returns HTTP 503 instead of quietly serving an ephemeral replay.
 

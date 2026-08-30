@@ -100,6 +100,7 @@ function defaultStats() {
     modelCalls: 0,
     modelAttempts: 0,
     modelFallbacks: 0,
+    modelCostSkips: 0,
     modelPromptTokens: 0,
     modelCompletionTokens: 0,
     eventCount: 0,
@@ -339,6 +340,10 @@ function modelTelemetryFor(plan) {
 
 function recordPlanTelemetry(state, resident, plan, planAt) {
   const { telemetry, promptTokens, completionTokens } = modelTelemetryFor(plan);
+  if (telemetry?.skipped) {
+    state.stats.modelCostSkips += 1;
+    return;
+  }
   if (!telemetry?.attempted) return;
 
   state.stats.modelAttempts += 1;
@@ -404,15 +409,12 @@ function queuePlanActions(state, resident, plan, planAt) {
   resident.nextActionAt = resident.actionQueue[0]?.scheduledAt ?? null;
 }
 
-function executePlan(state, resident, decisionAdapter, planAt) {
-  const rawPlan = decisionAdapter({
+async function executePlan(state, resident, decisionAdapter, planAt) {
+  const rawPlan = await decisionAdapter({
     town: decisionSnapshot(state, planAt),
     resident: { ...resident },
     now: planAt,
   });
-  if (rawPlan && typeof rawPlan.then === "function") {
-    throw new TypeError("decisionAdapter must return a synchronous plan");
-  }
 
   const plan = normalizeDailyPlan(rawPlan, {
     town: state,
@@ -443,6 +445,8 @@ function executePlan(state, resident, decisionAdapter, planAt) {
     model: telemetry ? {
       attempted: Boolean(telemetry.attempted),
       fallback: Boolean(telemetry.fallback),
+      skipped: Boolean(telemetry.skipped),
+      policyReason: telemetry.policyReason ?? null,
       model: telemetry.model ?? null,
       requestId: telemetry.requestId ?? null,
       promptTokens,
@@ -667,7 +671,7 @@ function chooseDueWork(state, to) {
   return { kind: "action", resident: actionResident };
 }
 
-export function advanceTown(state, {
+export async function advanceTown(state, {
   minutes = DEFAULT_TICK_MINUTES,
   decisionAdapter = scriptedObligationPlan,
 } = {}) {
@@ -697,7 +701,7 @@ export function advanceTown(state, {
     advanceCausalState(next, effectiveAt);
 
     if (work.kind === "plan") {
-      executePlan(next, work.resident, decisionAdapter, effectiveAt);
+      await executePlan(next, work.resident, decisionAdapter, effectiveAt);
     } else {
       executeAction(next, work.resident, work.resident.actionQueue[0], effectiveAt);
     }
@@ -869,7 +873,7 @@ export function reconcileTownWithSeed(state, { seedData = townSeed } = {}) {
   };
 }
 
-export function runPreview({
+export async function runPreview({
   ticks = DEFAULT_PREVIEW_TICKS,
   tickMinutes = DEFAULT_TICK_MINUTES,
   seed,
@@ -882,7 +886,7 @@ export function runPreview({
 
   let state = createInitialTown({ seed, startTime, seedData });
   for (let tick = 0; tick < ticks; tick += 1) {
-    state = advanceTown(state, { minutes: tickMinutes });
+    state = await advanceTown(state, { minutes: tickMinutes });
   }
   return state;
 }

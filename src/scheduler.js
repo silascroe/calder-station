@@ -89,6 +89,35 @@ export function scheduleDecision({ requestedAt, priority = "routine", peakWindow
   return nextOffPeak(requested, peakWindows);
 }
 
+/**
+ * Decide whether a paid model request may run at the current wall-clock time.
+ * Simulation time is deliberately not involved: provider pricing follows the
+ * real request timestamp, while the town clock remains a world mechanic.
+ */
+export function modelCallPolicy({
+  wallClock,
+  priority = "routine",
+  bypassPeakPricing = false,
+  peakWindows,
+} = {}) {
+  const requestedAt = asDate(wallClock);
+  if (bypassPeakPricing || priority === "urgent") {
+    return { allowed: true, reason: bypassPeakPricing ? "evaluation-bypass" : "urgent", requestedAt };
+  }
+  if (priority !== "routine") {
+    throw new RangeError(`Unsupported model-call priority: ${priority}`);
+  }
+  if (!isPeakPeriod(requestedAt, peakWindows)) {
+    return { allowed: true, reason: "off-peak", requestedAt };
+  }
+  return {
+    allowed: false,
+    reason: "peak-pricing-window",
+    requestedAt,
+    nextEligibleAt: nextOffPeak(requestedAt, peakWindows),
+  };
+}
+
 function stableHash(value) {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
@@ -156,4 +185,3 @@ export function spreadDailyDecisionTimes({ day, residentIds, peakWindows } = {})
     };
   });
 }
-

@@ -24,7 +24,7 @@ function methodNotAllowed() {
   return json({ error: "Only GET is supported by the read-only API." }, 405);
 }
 
-function previewFromUrl(url) {
+async function previewFromUrl(url) {
   return runPreview(previewOptions(url));
 }
 
@@ -91,7 +91,7 @@ export default {
             return await persistentApi(env, url, "/health");
           }
 
-          const state = previewFromUrl(url);
+          const state = await previewFromUrl(url);
           return json({
             ok: true,
             service: "town-dashboard",
@@ -110,7 +110,7 @@ export default {
             return await persistentApi(env, url, "/state");
           }
 
-          return json(townView(previewFromUrl(url)));
+          return json(townView(await previewFromUrl(url)));
         }
 
         if (url.pathname === "/api/events") {
@@ -118,7 +118,7 @@ export default {
             return await persistentApi(env, url, "/events");
           }
 
-          const state = previewFromUrl(url);
+          const state = await previewFromUrl(url);
           const rawLimit = url.searchParams.get("limit");
           const limit = rawLimit === null ? undefined : Number(rawLimit);
           if (rawLimit !== null && (!/^\d+$/.test(rawLimit) || limit < 1 || limit > 200)) {
