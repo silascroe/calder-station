@@ -4,6 +4,7 @@ import {
   reconcileTownWithSeed,
   townView,
 } from "./simulation.js";
+import { townSeed } from "./demo-data.js";
 import {
   openObligationFor,
   scriptedObligationPlan,
@@ -73,6 +74,51 @@ function dueWithin(state, residentId, minutes) {
   const horizon = new Date(new Date(state.now).getTime() + minutes * 60 * 1000);
   if (Number.isNaN(decisionAt.getTime()) || decisionAt > horizon) return null;
   return { resident, decisionAt };
+}
+
+/**
+ * Seed reconciliation deliberately preserves evolved resident state. Names and
+ * authored routine copy are different: they are editorial metadata, so a seed
+ * revision may safely refresh them without resetting energy, location, plans,
+ * relationships, or history.
+ */
+function syncAuthoredResidentCopy(state, { refreshRoutineCopy = false } = {}) {
+  let changed = false;
+  const residentSeeds = new Map(townSeed.residents.map((resident) => [resident.id, resident]));
+
+  for (const resident of state.residents ?? []) {
+    const seed = residentSeeds.get(resident.id);
+    if (!seed) continue;
+
+    if (resident.name !== seed.name) {
+      resident.name = seed.name;
+      changed = true;
+    }
+
+    if (refreshRoutineCopy && seed.routine) {
+      const nextRoutine = clone(seed.routine);
+      if (JSON.stringify(resident.routine ?? null) !== JSON.stringify(nextRoutine)) {
+        resident.routine = nextRoutine;
+        changed = true;
+      }
+    }
+  }
+
+  if (refreshRoutineCopy) {
+    const obligationSeeds = new Map((townSeed.obligations ?? []).map((obligation) => [obligation.id, obligation]));
+    for (const obligation of state.obligations ?? []) {
+      const seed = obligationSeeds.get(obligation.id);
+      if (!seed) continue;
+      for (const field of ["title", "description"]) {
+        if (obligation[field] !== seed[field]) {
+          obligation[field] = seed[field];
+          changed = true;
+        }
+      }
+    }
+  }
+
+  return changed;
 }
 
 /** One serialized owner for Rookwood's projection, event log, and heartbeat. */
@@ -163,11 +209,21 @@ export class RookwoodTown {
     }
 
     const stored = JSON.parse(rows[0].state_json);
+    const previousSeedRevision = Number(stored.seedRevision ?? 0);
+
     // Keep only a small recent window in memory for the next decision. The
     // full history remains in SQLite and is never sent to the model.
     stored.events = this.readEvents(8).reverse();
+
     const reconciled = reconcileTownWithSeed(stored);
-    if (reconciled.needsPersist) this.persist(reconciled.state);
+    const authoredCopyChanged = syncAuthoredResidentCopy(reconciled.state, {
+      refreshRoutineCopy: previousSeedRevision < 4,
+    });
+
+    if (reconciled.needsPersist || authoredCopyChanged) {
+      this.persist(reconciled.state);
+    }
+
     await this.ensureAlarm();
     return reconciled.state;
   }
@@ -269,9 +325,11 @@ export class RookwoodTown {
     const next = advanceTown(state, {
       minutes: SIMULATION_STEP_MINUTES,
       decisionAdapter: ({ town, resident, now }) => {
-        if (modelRun
+        if (
+          modelRun
           && resident.id === MODEL_RESIDENT_ID
-          && now.toISOString() === modelRun.decisionAt) {
+          && now.toISOString() === modelRun.decisionAt
+        ) {
           return modelRun.plan;
         }
         return scriptedObligationPlan({ town, resident, now });
