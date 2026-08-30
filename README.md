@@ -93,6 +93,8 @@ The staging Worker runs the same fixed 24-case evaluation once per configured re
 
 Before the first call, staging stores a durable `running` lease. Complete, failed, and interrupted/in-flight revisions are not retried automatically; a deliberate retry requires a new evaluation revision. The town's normal alarm path similarly guards model decisions by their exact simulated planning instant so a Worker retry cannot casually buy the same unknown response twice.
 
+After a staging deployment, GitHub Actions waits for that revision's terminal report. A blocked, failed, malformed, or timed-out evaluation fails the staging run; a successful 24-case report and its cost summary remain in the deployment log for later review.
+
 The current milestone is simple: a fresh Calder Station should survive 90 simulated days and accumulate understandable causal differences instead of producing ninety copies of the same day.
 
 ## Run it locally

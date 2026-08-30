@@ -79,6 +79,8 @@ Resident planning slots span the entire simulated day. They never move to accomm
 
 Staging has a fixed evaluation revision and a server-side quarter-hour Cron trigger. The trigger checks a report stored in the staging town object's SQLite-backed KV storage and runs the 24-case matrix once per revision. It stores `running` before the first provider call; `running`, `failed`, and `complete` are all non-retrying states, so a killed or failed evaluation cannot spend again on later triggers. Retrying deliberately requires a new revision. Production declares no evaluation trigger. The public staging API can read the report but cannot trigger, reset, or configure paid calls. Because Worker secrets are environment-specific, staging requires its own `DEEPSEEK_API_KEY`; post-deploy smoke verification requires `modelReady: true`.
 
+The staging deployment then polls that read-only report for up to 20 minutes. Terminal failure makes the deployment red; completion prints the bounded report into the GitHub Actions record. This is observation, not a second trigger, so deployment retries cannot initiate extra provider calls for the same revision.
+
 Routine mechanics remain scripted. More model-eligible incident classes should wait until the first one is easy to explain from the event history and long-horizon reports.
 
 ## Viewer

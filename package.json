@@ -8,6 +8,7 @@
     "test": "node --test",
     "scenario": "node scripts/run-scenario.mjs",
     "evaluate:model": "node scripts/run-model-evaluation.mjs",
+    "wait:evaluation": "node scripts/wait-model-evaluation.mjs",
     "validate:deploy": "node scripts/validate-deploy-config.mjs",
     "smoke:deploy": "node scripts/smoke-deployment.mjs",
     "dev": "npx wrangler dev",

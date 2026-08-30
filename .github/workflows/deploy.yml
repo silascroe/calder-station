@@ -40,7 +40,7 @@ jobs:
     if: ${{ github.event_name == 'push' || inputs.environment == 'staging' }}
     needs: test
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -58,6 +58,11 @@ jobs:
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
         run: npm run smoke:deploy -- --url "$DEPLOYMENT_URL" --environment staging --object rookwood-staging --require-model
+
+      - name: Await bounded DeepSeek evaluation
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: npm run wait:evaluation -- --url "$DEPLOYMENT_URL"
 
   deploy-production:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.environment == 'production' }}
