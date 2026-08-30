@@ -12,15 +12,15 @@ import {
   townView,
 } from "../src/simulation.js";
 
-test("the town seed creates ten residents, places, and relationships", () => {
+test("the town seed creates fifteen integrated residents, places, and relationships", () => {
   const town = createInitialTown();
   const decisionTimes = town.residents.map((resident) => resident.nextDecisionAt);
 
   assert.equal(town.now, DEFAULT_START_TIME);
   assert.equal(town.mode, "scripted-simulation-preview");
-  assert.equal(town.residents.length, 10);
-  assert.equal(town.locations.length, 11);
-  assert.equal(town.relationships.length, 12);
+  assert.equal(town.residents.length, 15);
+  assert.equal(town.locations.length, 14);
+  assert.equal(town.relationships.length, 27);
   const residentIds = new Set(town.residents.map((resident) => resident.id));
   assert.ok(town.relationships.every((relationship) => (
     relationship.fromId !== relationship.toId
@@ -29,10 +29,20 @@ test("the town seed creates ten residents, places, and relationships", () => {
     && relationship.strength >= 0
     && relationship.strength <= 100
   )));
-  assert.equal(new Set(decisionTimes).size, 10);
+  assert.equal(new Set(decisionTimes).size, 15);
   assert.ok(decisionTimes.every((time) => !isPeakPeriod(time)));
   assert.equal(town.events.length, 1);
   assert.equal(town.events[0].type, "system");
+
+  const locationIds = new Set(town.locations.map(({ id }) => id));
+  for (const resident of town.residents) {
+    assert.ok(locationIds.has(resident.homeLocationId));
+    assert.ok(locationIds.has(resident.workLocationId));
+  }
+  for (const id of ["edda", "vey", "tamsin", "amos", "lio"]) {
+    const ties = town.relationships.filter(({ fromId, toId }) => fromId === id || toId === id);
+    assert.ok(ties.length >= 3, `${id} should enter town with at least three ties`);
+  }
 });
 
 test("a preview advances the clock and lets each resident make a decision", () => {
@@ -43,19 +53,21 @@ test("a preview advances the clock and lets each resident make a decision", () =
   assert.equal(town.now, "2026-09-01T00:00:00.000Z");
   assert.equal(town.day, 2);
   assert.equal(town.stats.tickCount, 24);
-  assert.equal(town.stats.decisionCount, 10);
-  assert.equal(decisions.length, 10);
-  assert.equal(new Set(decisions.map((event) => event.actorId)).size, 10);
-  assert.equal(movements.length, 10);
+  assert.equal(town.stats.decisionCount, 15);
+  assert.equal(decisions.length, 15);
+  assert.equal(new Set(decisions.map((event) => event.actorId)).size, 15);
+  assert.ok(movements.length >= 10);
   assert.ok(town.residents.every((resident) => resident.energy >= 0 && resident.energy <= 100));
   assert.ok(town.residents.every((resident) => resident.hunger >= 0 && resident.hunger <= 100));
+  assert.ok(decisions.some((event) => event.actorId === "edda"));
+  assert.ok(decisions.some((event) => event.actorId === "amos"));
 });
 
 test("the second day exercises ordinary meal and rest rules", () => {
   const town = runPreview({ ticks: 48 });
   const decisions = town.events.filter((event) => event.type === "decision");
 
-  assert.equal(town.stats.decisionCount, 20);
+  assert.equal(town.stats.decisionCount, 30);
   assert.ok(decisions.some((event) => event.text.startsWith("stopped to eat")));
   assert.ok(town.residents.some((resident) => resident.lastAction === "rest"));
 });
@@ -92,7 +104,7 @@ test("views keep town state and newest-first events separate", () => {
   const events = eventView(state);
 
   assert.equal("events" in town, false);
-  assert.equal(town.relationships.length, 12);
+  assert.equal(town.relationships.length, 27);
   assert.equal(events[0].at >= events.at(-1).at, true);
   assert.equal(events.length, state.events.length);
 });

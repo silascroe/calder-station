@@ -11,23 +11,23 @@
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <a class="brand" href="/" data-route>
-          <span class="brand-mark">T</span>
-          <span>Town</span>
+        <a class="brand" href="/" data-route aria-label="Rookwood town view">
+          <span class="brand-mark">R</span>
+          <span><strong>Rookwood</strong><small>Town view</small></span>
         </a>
         <nav class="nav" aria-label="Primary navigation">
-          <a href="/" data-route data-nav="/">Overview</a>
+          <a href="/" data-route data-nav="/">Town</a>
           <a href="/map" data-route data-nav="/map">Map</a>
-          <a href="/residents" data-route data-nav="/residents">Residents</a>
+          <a href="/residents" data-route data-nav="/residents">People</a>
         </nav>
-        <div class="status-chip"><span class="status-dot"></span>Scripted simulation</div>
+        <div class="status-chip"><span class="status-dot"></span><span id="connection-label">Scripted rules</span></div>
       </header>
 
       <main id="app" aria-live="polite"></main>
 
       <footer class="footer">
-        <span>ROOKWOOD / SCRIPTED PREVIEW</span>
-        <span>Read-only window into the world</span>
+        <span>ROOKWOOD / PERSISTENT TOWN</span>
+        <span>Read-only window · deterministic rules</span>
       </footer>
     </div>
   </body>

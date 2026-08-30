@@ -1,13 +1,15 @@
 import {
   advanceTown,
   createInitialTown,
-  eventView,
+  reconcileTownWithSeed,
   townView,
 } from "./simulation.js";
 
 export const TOWN_NAME = "rookwood";
 export const SIMULATION_STEP_MINUTES = 60;
 export const HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000;
+export const DEFAULT_EVENT_LIMIT = 80;
+export const MAX_EVENT_LIMIT = 200;
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS town_state (
@@ -31,18 +33,11 @@ const JSON_HEADERS = {
 };
 
 function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: JSON_HEADERS,
-  });
+  return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
 }
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
-}
-
-function ensureSchema(sql) {
-  sql.exec(SCHEMA);
 }
 
 function projectionFor(state) {
@@ -51,36 +46,35 @@ function projectionFor(state) {
   return projection;
 }
 
-/**
- * One object owns the first persistent town. Residents remain ordinary data;
- * the object serializes access to the world projection and its event log.
- *
- * This class deliberately uses the standard (ctx, env) Durable Object
- * constructor shape without importing a platform-only module. That keeps the
- * dependency-free Node test suite useful while Wrangler registers the export
- * as the SQLite-backed Durable Object class.
- */
+function eventLimit(url) {
+  const value = url.searchParams.get("limit");
+  if (value === null || value === "") return DEFAULT_EVENT_LIMIT;
+  if (!/^\d+$/.test(value)) throw new RangeError("limit must be a positive integer");
+  const limit = Number(value);
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_EVENT_LIMIT) {
+    throw new RangeError(`limit must be between 1 and ${MAX_EVENT_LIMIT}`);
+  }
+  return limit;
+}
+
+/** One serialized owner for Rookwood's projection, event log, and heartbeat. */
 export class RookwoodTown {
   constructor(ctx, env) {
     this.ctx = ctx;
     this.env = env;
     this.sql = ctx.storage.sql;
 
-    const initialize = async () => {
-      ensureSchema(this.sql);
-    };
-
+    const initialize = async () => this.sql.exec(SCHEMA);
     if (typeof ctx.blockConcurrencyWhile === "function") {
       ctx.blockConcurrencyWhile(initialize);
     } else {
-      ensureSchema(this.sql);
+      this.sql.exec(SCHEMA);
     }
   }
 
   persist(state) {
     const projection = JSON.stringify(projectionFor(state));
     const updatedAt = new Date().toISOString();
-
     const write = () => {
       this.sql.exec(
         `INSERT INTO town_state (id, state_json, updated_at)
@@ -93,7 +87,7 @@ export class RookwoodTown {
         updatedAt,
       );
 
-      for (const event of state.events) {
+      for (const event of state.events ?? []) {
         this.sql.exec(
           `INSERT OR IGNORE INTO town_events (id, at, event_json)
            VALUES (?, ?, ?)`,
@@ -114,15 +108,25 @@ export class RookwoodTown {
   async ensureAlarm() {
     const storage = this.ctx.storage;
     if (typeof storage.setAlarm !== "function") return null;
-
     if (typeof storage.getAlarm === "function") {
       const existing = await storage.getAlarm();
       if (existing !== null && existing !== undefined) return existing;
     }
-
     const nextAlarm = Date.now() + HEARTBEAT_INTERVAL_MS;
     await storage.setAlarm(nextAlarm);
     return nextAlarm;
+  }
+
+  readEvents(limit = DEFAULT_EVENT_LIMIT) {
+    return this.sql
+      .exec(
+        `SELECT event_json FROM town_events
+         ORDER BY at DESC, id DESC
+         LIMIT ?`,
+        limit,
+      )
+      .toArray()
+      .map(({ event_json }) => JSON.parse(event_json));
   }
 
   async load() {
@@ -134,20 +138,18 @@ export class RookwoodTown {
       const state = createInitialTown();
       state.mode = "persistent-scripted-simulation";
       state.persistence = "durable-object";
-      state.summary = "A persistent Rookwood simulation driven by ordinary game-AI rules.";
+      state.summary = "A small town continuing under deterministic game rules.";
       this.persist(state);
       await this.ensureAlarm();
       return state;
     }
 
-    const state = JSON.parse(rows[0].state_json);
-    state.events = this.sql
-      .exec("SELECT event_json FROM town_events ORDER BY at ASC, id ASC")
-      .toArray()
-      .map(({ event_json }) => JSON.parse(event_json));
-    state.stats.eventCount = state.events.length;
+    const stored = JSON.parse(rows[0].state_json);
+    stored.events = [];
+    const reconciled = reconcileTownWithSeed(stored);
+    if (reconciled.changed) this.persist(reconciled.state);
     await this.ensureAlarm();
-    return state;
+    return reconciled.state;
   }
 
   async fetch(request) {
@@ -164,7 +166,8 @@ export class RookwoodTown {
       if (url.pathname === "/events") {
         const state = await this.load();
         return json({
-          events: eventView(state),
+          events: this.readEvents(eventLimit(url)),
+          eventCount: state.stats.eventCount,
           tickCount: state.stats.tickCount,
           persistence: state.persistence,
         });
@@ -180,7 +183,9 @@ export class RookwoodTown {
           engine: "deterministic-scripted",
           persistence: state.persistence,
           object: TOWN_NAME,
+          seedRevision: state.seedRevision,
           tickCount: state.stats.tickCount,
+          eventCount: state.stats.eventCount,
           modelCalls: state.stats.modelCalls,
           alarmAt: alarmAt === null ? null : new Date(alarmAt).toISOString(),
           serverTime: new Date().toISOString(),

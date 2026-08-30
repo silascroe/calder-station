@@ -4,10 +4,10 @@ This is a direction document, not a promise to build every item immediately. The
 
 ## Current boundary
 
-- Ten-resident Rookwood seed with eleven locations and twelve seeded relationships.
+- Fifteen-resident Rookwood seed with fourteen locations and twenty-seven seeded relationships.
 - Deterministic scripted game AI; no model calls.
-- One SQLite-backed `RookwoodTown` Durable Object for persistent state, events, and an hourly alarm heartbeat when deployed.
-- A read-only dashboard with an explicit ephemeral preview fallback via `ticks`.
+- One SQLite-backed `RookwoodTown` Durable Object for persistent state, events, migration, and an hourly alarm.
+- A read-only town journal with map occupancy, people, relationships, and bounded history.
 - The original three-resident seed remains available as a compact regression scenario.
 
 ## North-star architecture
@@ -58,9 +58,9 @@ Keep expanding the ordinary rules and event types while preserving replayability
 
 ### 2. Make one town persistent — foundation landed
 
-The repository now has one SQLite-backed `RookwoodTown` object. It persists the current projection and event log, exposes read-only state/event/health reads through the Worker, and uses an alarm to advance the scripted simulation by one simulated hour per wall-clock hour. The object is configured with the current SQLite class export format and remains one coordinator for the whole town.
+Rookwood now has one SQLite-backed object that persists its projection and event log, serializes changes, migrates authored seed additions, and advances through an hourly alarm. Event history is no longer loaded wholesale to advance the town.
 
-The remaining reliability work here is deliberately unglamorous: checkpoints, retries, alarm observability, and a clear simulation clock before model calls are allowed. Do not add D1 merely because it is a database. Introduce it when the project has a real need for shared relational queries beyond one town object.
+Do not add D1 merely because it is a database. Introduce it when the project has a real need for shared relational queries beyond one town object.
 
 ### 3. Introduce a daily-plan interface
 
@@ -76,7 +76,7 @@ Allow plans to create social intentions, then let the deterministic engine decid
 
 ### 6. Grow the town only when the systems need it
 
-Ten residents are enough for the first meaningful town. Increase population after the economy, relationships, memory, scheduling, and viewer can explain what happened. Population is not a substitute for interacting systems.
+Fifteen residents are enough for the next meaningful town. Do not grow again until economy, relationships, memory, scheduling, and the viewer can explain what happened. Population is not a substitute for interacting systems.
 
 ## Guardrails
 
@@ -86,4 +86,3 @@ Ten residents are enough for the first meaningful town. Increase population afte
 - No giant unfiltered transcript in every prompt.
 - No automatic publishing, merging, deleting, or other irreversible side effects by default.
 - Preserve a small deterministic scenario for fast regression tests.
-

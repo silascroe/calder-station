@@ -1,5 +1,5 @@
 import { spreadDailyDecisionTimes } from "./scheduler.js";
-import { townSeed } from "./demo-data.js";
+import { TOWN_SEED_REVISION, townSeed } from "./demo-data.js";
 import { scriptedDecision } from "./scripted-decisions.js";
 
 const MINUTE_MS = 60 * 1000;
@@ -73,7 +73,7 @@ function appendEvent(state, { at, actorId = null, type, text, source = "simulati
     : null;
   const eventAt = asDate(at);
   const event = {
-    id: `event-${String(state.events.length + 1).padStart(4, "0")}`,
+    id: `event-${String((state.stats.eventCount ?? 0) + 1).padStart(4, "0")}`,
     at: eventAt.toISOString(),
     time: formatEventTime(eventAt),
     actorId,
@@ -85,7 +85,7 @@ function appendEvent(state, { at, actorId = null, type, text, source = "simulati
 
   if (reason) event.reason = reason;
   state.events.push(event);
-  state.stats.eventCount = state.events.length;
+  state.stats.eventCount = (state.stats.eventCount ?? 0) + 1;
   return event;
 }
 
@@ -186,6 +186,7 @@ export function createInitialTown({
     mode: "scripted-simulation-preview",
     persistence: "ephemeral",
     seed,
+    seedRevision: TOWN_SEED_REVISION,
     startedAt: startedAt.toISOString(),
     now: startedAt.toISOString(),
     day: 1,
@@ -279,8 +280,77 @@ export function advanceTown(state, {
   next.day = simulationDay(next.startedAt, to);
   next.clock = formatClock(to);
   next.stats.tickCount += 1;
-  next.stats.eventCount = next.events.length;
   return next;
+}
+
+function residentFromSeed(state, residentSeed, scheduledAfter, ids) {
+  const location = locationFor(state, residentSeed.initialLocationId);
+  const resident = {
+    ...residentSeed,
+    ...(residentSeed.routine ? { routine: { ...residentSeed.routine } } : {}),
+    locationId: location.id,
+    location: location.name,
+    x: location.x,
+    y: location.y,
+    status: "Settling into town",
+    decisionCount: 0,
+    lastAction: "rest",
+    lastDecisionAt: null,
+    nextDecisionAt: null,
+  };
+  resident.nextDecisionAt = nextRoutineDecision(state, resident.id, scheduledAfter, ids).toISOString();
+  return resident;
+}
+
+/**
+ * Idempotently brings a persisted projection up to the current authored seed
+ * without replacing the history or evolved state of existing residents.
+ */
+export function reconcileTownWithSeed(state, { seedData = townSeed } = {}) {
+  const next = cloneTown(state);
+  next.events ??= [];
+  next.stats ??= { tickCount: 0, decisionCount: 0, modelCalls: 0, eventCount: 0 };
+  next.stats.eventCount ??= next.events.length;
+
+  const changes = { locations: 0, residents: 0, relationships: 0 };
+  const locationIds = new Set(next.locations.map(({ id }) => id));
+  for (const location of seedData.locations) {
+    if (locationIds.has(location.id)) continue;
+    next.locations.push({ ...location });
+    locationIds.add(location.id);
+    changes.locations += 1;
+  }
+
+  const residentIds = new Set(next.residents.map(({ id }) => id));
+  const allResidentIds = seedData.residents.map(({ id }) => id);
+  for (const residentSeed of seedData.residents) {
+    if (residentIds.has(residentSeed.id)) continue;
+    next.residents.push(residentFromSeed(next, residentSeed, next.now, allResidentIds));
+    residentIds.add(residentSeed.id);
+    changes.residents += 1;
+  }
+
+  const relationshipIds = new Set((next.relationships ?? []).map(({ id }) => id));
+  next.relationships ??= [];
+  for (const relationship of seedData.relationships ?? []) {
+    if (relationshipIds.has(relationship.id)) continue;
+    next.relationships.push({ ...relationship });
+    relationshipIds.add(relationship.id);
+    changes.relationships += 1;
+  }
+
+  next.seedRevision = TOWN_SEED_REVISION;
+  const changed = Object.values(changes).some((count) => count > 0);
+  if (changed) {
+    appendEvent(next, {
+      at: next.now,
+      type: "system",
+      source: "migration",
+      text: `the town register added ${changes.residents} residents and ${changes.locations} places`,
+    });
+  }
+
+  return { state: next, changed, changes };
 }
 
 export function runPreview({

@@ -15,7 +15,7 @@ The model returns intent. The simulation remains the authority on what actually 
 
 ## Current implementation slice
 
-The repository currently implements the loop without a model: a seeded ten-resident Rookwood state advances in hourly ticks, applies simple need changes, wakes residents at staggered routine slots, asks a scripted decision policy for an intent, validates and resolves that intent, and appends movement and decision events. The seed also contains eleven locations and twelve relationship edges, but relationships are not changing yet. `runPreview()` replays the same sequence from the same inputs, while the Worker exposes state and newest-first events as read-only projections. The preview is intentionally ephemeral and makes zero model calls. The seed is recorded as replay metadata; deterministic behavior comes from the rules and roster for now, with randomness deferred until it can be tested explicitly.
+The repository implements the loop without a model: a fifteen-resident Rookwood advances in hourly ticks, applies need changes, wakes residents at staggered slots, asks a scripted policy for intent, validates the result, and appends events. Fourteen places and twenty-seven relationship edges give the world useful structure, though relationships do not change yet. `runPreview()` remains a deterministic replay tool; the deployed default is persistent and makes zero model calls.
 
 ## Scheduling policy
 
@@ -40,11 +40,9 @@ An LLM response should never be allowed to mutate storage directly. That is how 
 
 ## Durable Object boundary
 
-The first persistent town is one SQLite-backed Durable Object, `RookwoodTown`, bound to the Worker as `TOWN`. It owns the Rookwood projection, its append-only event rows, and the alarm that advances the scripted simulation. Residents are records inside the town, not separate objects by default.
+One SQLite-backed Durable Object, `RookwoodTown`, owns Rookwood's projection, append-only events, and alarm. Residents remain ordinary records; they are not separate Durable Objects. World rules remain in the domain modules rather than the Worker or storage adapter.
 
-The object uses two small tables: `town_state` stores the current serialized projection without event history, and `town_events` stores immutable event records. A Worker request reads through the object; an alarm advances the domain state and persists it. This keeps storage and wake-up mechanics outside the simulation rules.
-
-The default API uses the persistent object when the binding is present. A request with `ticks` explicitly uses the ephemeral replay path, which preserves a cheap deterministic inspection tool and keeps tests independent of platform storage.
+Persisted projections carry a seed revision and reconcile with authored residents, places, and relationships on load. Reconciliation only adds missing authored records; it preserves evolved resident state and historical events. The projection also owns the monotonic event count. Alarms therefore advance from a compact projection and persist only newly produced events instead of reading an unbounded log into memory. Viewer event reads are bounded to 200 records.
 
 ## Cost guardrails for the eventual model adapter
 
@@ -60,11 +58,10 @@ The default API uses the persistent object when the binding is present. A reques
 
 The dashboard is a separate read-only window into the simulation. It should consume projections and events; it should not contain world rules or call the model directly.
 
-The first useful surface is deliberately small: a town overview, a resident list, a map-like location view, and a chronological event feed. Client-side routes such as `/map` and `/residents/mara` can exist before the simulation is real by rendering fixture data. This gives the project a visible feedback loop without coupling the UI to unfinished storage.
+The viewer is organized as a town journal rather than an operations dashboard: what is happening now, where people are, who is likely to act next, and what one resident's ordinary life looks like. The map groups occupancy by place instead of overlapping resident markers. Simulation counters remain available but are deliberately secondary.
 
-The deployed dashboard reads `/api/town` and `/api/events`. It now has a persistent path backed by the town object, while `ticks` remains an explicit replay path. Polling is sufficient for a tiny persistent town. A live stream can be added later without changing the page-level route model.
+The viewer reads `/api/town` and a bounded `/api/events` feed, refreshes once per minute while visible, and contains no world rules. WebSockets would add machinery without improving an hourly simulation and are deferred.
 
 ## Infrastructure direction
 
-For a small deployment, one coordinator plus durable storage is enough. Residents should be rows or records, not one Durable Object and one workflow per personality by default. D1 is optional for later cross-town queries, analytics, administration, or reporting; it is not needed for Rookwood's first persistent state. The next infrastructure-adjacent work is reliability around the existing alarm and then a daily-plan interface in the domain layer.
-
+One coordinator plus its embedded SQLite storage is enough. D1 is optional for later analytics, administration, or cross-town queries. Queues, Workflows, and one-object-per-resident designs are also deferred until contention or fan-out exists in reality.

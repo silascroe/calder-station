@@ -37,7 +37,9 @@ function shouldUsePersistentTown(url, env) {
 function persistentRequest(url, path) {
   const target = new URL(url);
   target.pathname = path;
-  target.search = "";
+  for (const key of [...target.searchParams.keys()]) {
+    if (key !== "limit") target.searchParams.delete(key);
+  }
   return new Request(target, { method: "GET" });
 }
 
@@ -86,8 +88,13 @@ export default {
           }
 
           const state = previewFromUrl(url);
+          const rawLimit = url.searchParams.get("limit");
+          const limit = rawLimit === null ? undefined : Number(rawLimit);
+          if (rawLimit !== null && (!/^\d+$/.test(rawLimit) || limit < 1 || limit > 200)) {
+            throw new RangeError("limit must be between 1 and 200");
+          }
           return json({
-            events: eventView(state),
+            events: limit === undefined ? eventView(state) : eventView(state).slice(0, limit),
             tickCount: state.stats.tickCount,
             persistence: state.persistence,
           });
