@@ -2,6 +2,10 @@ function hourAt(date) {
   return date.getUTCHours() + date.getUTCMinutes() / 60;
 }
 
+function inWindow(hour, start, end) {
+  return Number.isFinite(start) && Number.isFinite(end) && hour >= start && hour < end;
+}
+
 function decision(action, locationId, reason, status, mood) {
   return { action, locationId, reason, status, mood };
 }
@@ -14,6 +18,8 @@ export function scriptedDecision({ resident, now } = {}) {
   if (!resident || !(now instanceof Date) || Number.isNaN(now.getTime())) {
     throw new TypeError("scriptedDecision requires a resident and valid Date");
   }
+
+  const routine = resident.routine ?? {};
 
   if (resident.energy <= 24) {
     return decision(
@@ -37,117 +43,45 @@ export function scriptedDecision({ resident, now } = {}) {
 
   const hour = hourAt(now);
 
+  // The first wake-up gives every seeded resident a visible reason to leave
+  // home. Later wake-ups follow the ordinary work, meal, and evening rules.
   if (resident.decisionCount === 0) {
-    if (resident.id === "mara") {
-      return decision(
-        "work",
-        resident.workLocationId,
-        "the bakery needs someone on duty",
-        "Working a late bakery shift",
-        "Focused",
-      );
-    }
-    if (resident.id === "otis") {
-      return decision(
-        "work",
-        resident.workLocationId,
-        "a repair is waiting at the workshop",
-        "Taking a late repair shift",
-        "Irritated",
-      );
-    }
-    if (resident.id === "sal") {
-      return decision(
-        "deliver",
-        resident.workLocationId,
-        "the first courier route is ready",
-        "Checking the delivery board",
-        "Alert",
-      );
-    }
-  }
-
-  if (resident.id === "mara") {
-    if (hour >= 5 && hour < 12) {
-      return decision(
-        "work",
-        resident.workLocationId,
-        "the bakery shift is beginning",
-        "Opening the ovens",
-        "Focused",
-      );
-    }
-    if (hour >= 12 && hour < 14) {
-      return decision(
-        "eat",
-        resident.workLocationId,
-        "the morning shift is over",
-        "Eating behind the bakery",
-        "Content",
-      );
-    }
     return decision(
-      "rest",
-      resident.homeLocationId,
-      "the bakery day is finished",
-      "Heading home to rest",
-      "Relieved",
+      routine.action ?? "work",
+      resident.workLocationId,
+      routine.workReason ?? "the day's work is waiting",
+      routine.workStatus ?? "Starting the day's work",
+      routine.workMood ?? "Focused",
     );
   }
 
-  if (resident.id === "otis") {
-    if (hour >= 8 && hour < 18) {
-      return decision(
-        "work",
-        resident.workLocationId,
-        "the workshop is open",
-        "Sorting a stubborn gearbox",
-        "Irritated",
-      );
-    }
-    if (hour >= 18 && hour < 20) {
-      return decision(
-        "eat",
-        resident.workLocationId,
-        "the workshop shift is winding down",
-        "Eating beside the workshop",
-        "Hungry",
-      );
-    }
+  if (inWindow(hour, routine.mealStart, routine.mealEnd)) {
     return decision(
-      "rest",
-      resident.homeLocationId,
-      "the tools can wait until morning",
-      "Turning in for the night",
-      "Quiet",
+      "eat",
+      routine.mealLocationId ?? resident.locationId,
+      routine.mealReason ?? "it is time for a meal",
+      routine.mealStatus ?? "Stopping for a meal",
+      routine.mealMood ?? "Content",
     );
   }
 
-  if (resident.id === "sal") {
-    if (hour >= 9 && hour < 18) {
-      return decision(
-        "deliver",
-        resident.workLocationId,
-        "the courier route is active",
-        "Checking the delivery board",
-        "Alert",
-      );
-    }
-    if (hour >= 18 && hour < 21) {
-      return decision(
-        "observe",
-        "square",
-        "the evening crowd is worth watching",
-        "Watching the square",
-        "Curious",
-      );
-    }
+  if (inWindow(hour, routine.workStart, routine.workEnd)) {
     return decision(
-      "rest",
-      resident.homeLocationId,
-      "the roads are quiet",
-      "Walking home",
-      "Unwound",
+      routine.action ?? "work",
+      resident.workLocationId,
+      routine.workReason ?? "the day's work is waiting",
+      routine.workStatus ?? "Working through the day",
+      routine.workMood ?? "Focused",
+    );
+  }
+
+  if (routine.eveningAction && inWindow(hour, routine.eveningStart, routine.eveningEnd)) {
+    return decision(
+      routine.eveningAction,
+      routine.eveningLocationId ?? resident.locationId,
+      routine.eveningReason ?? "the evening is worth noticing",
+      routine.eveningStatus ?? "Out for the evening",
+      routine.eveningMood ?? "Curious",
     );
   }
 

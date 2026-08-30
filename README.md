@@ -2,7 +2,7 @@
 
 Town is an experiment in persistent multi-agent simulation: a small world with residents, routines, relationships, resources, and consequences that continue while nobody is looking.
 
-This repository is deliberately at the foundation stage. It does not call an AI API or pretend that a collection of prompts is a society. It now includes a tiny deterministic simulation, a read-only event feed, and a Cloudflare dashboard so the project has a visible front door while persistence and model decisions are still being built.
+This repository is deliberately at the foundation stage. It does not call an AI API or pretend that a collection of prompts is a society. It now includes a small deterministic simulation, a read-only event feed, and a Cloudflare dashboard so the project has a visible front door while persistence and model decisions are still being built.
 
 ## Design constraints
 
@@ -34,7 +34,7 @@ The local Worker serves the dashboard and its read-only simulation API. The curr
 
 ## Current simulation slice
 
-The first slice runs three residents through a deterministic 22-hour preview. Each resident receives a staggered routine decision slot, returns a scripted intent, moves if necessary, and updates bounded needs such as energy and hunger. Accepted actions become compact events. The dashboard reads a state projection and newest-first event feed from `/api/town` and `/api/events`.
+The first slice runs ten residents through a deterministic first-day preview. Each resident receives a staggered routine decision slot, returns a scripted intent, moves if necessary, and updates bounded needs such as energy and hunger. Eleven locations give the town a few distinct places to go, and twelve seeded relationships provide a social graph for later rules. Accepted actions become compact events. The dashboard reads a state projection and newest-first event feed from `/api/town` and `/api/events`.
 
 The preview records a seed as replay metadata, but does not use randomness yet. That is deliberate: deterministic rules are easier to inspect and test before stochastic variation is introduced.
 
@@ -45,7 +45,7 @@ For inspection, the preview length can be changed without mutating the town:
 /api/events?ticks=12
 ```
 
-The API accepts `ticks` from `0` through `48`. This is an ephemeral preview, so reloading the page recomputes the same state rather than advancing a remote town.
+The API accepts `ticks` from `0` through `48`. This is an ephemeral preview, so reloading the page recomputes the same state rather than advancing a remote town. The `tinyTownSeed` remains available to tests as a compact three-resident scenario.
 
 ## Repository layout
 
@@ -53,7 +53,7 @@ The API accepts `ticks` from `0` through `48`. This is an ephemeral preview, so 
 - `src/worker.js` — the Cloudflare Worker entry point and read-only simulation API.
 - `src/simulation.js` — state creation, ticking, event creation, replay, and API projections.
 - `src/scripted-decisions.js` — ordinary rule-based game AI; no model calls.
-- `src/demo-data.js` — the current Rookwood seed data.
+- `src/demo-data.js` — the ten-resident Rookwood seed and compact test seed.
 - `public/` — the static dashboard shell and client-side routes.
 - `test/scheduler.test.js` — executable examples for peak-hour deferral and staggered daily decisions.
 - `test/simulation.test.js` — replay, scheduling, event, and state-invariant tests.
@@ -71,4 +71,4 @@ Run **Deploy Town Dashboard** from the repository's Actions tab. The DeepSeek ke
 
 ## What comes next
 
-The next useful slice is durable storage: persist the event log and current projection in D1, then give one coordinator a heartbeat without putting world rules in the request handler. Only after replay and persistence are solid should one resident receive a real DeepSeek decision adapter. The model should plug into the simulation rather than become the simulation.
+The next useful slice is durable storage: persist the event log and current projection in D1, then give one coordinator a heartbeat without putting world rules in the request handler. Relationships are data for now; social actions should come only after the persistent event loop can record and replay them. Only after replay and persistence are solid should one resident receive a real DeepSeek decision adapter. The model should plug into the simulation rather than become the simulation.

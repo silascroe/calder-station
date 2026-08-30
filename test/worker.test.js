@@ -25,7 +25,7 @@ test("health endpoint reports the deterministic simulation Worker", async () => 
   assert.equal(body.modelCalls, 0);
 });
 
-test("town endpoint exposes a replayable three-resident simulation", async () => {
+test("town endpoint exposes a replayable ten-resident simulation", async () => {
   const response = await worker.fetch(
     new Request("https://town.example/api/town"),
     { ASSETS: assets() },
@@ -34,10 +34,12 @@ test("town endpoint exposes a replayable three-resident simulation", async () =>
 
   assert.equal(response.status, 200);
   assert.equal(body.name, "Rookwood");
-  assert.equal(body.residents.length, 3);
+  assert.equal(body.residents.length, 10);
+  assert.equal(body.locations.length, 11);
+  assert.equal(body.relationships.length, 12);
   assert.equal(body.mode, "scripted-simulation-preview");
-  assert.equal(body.stats.tickCount, 22);
-  assert.equal(body.stats.decisionCount, 3);
+  assert.equal(body.stats.tickCount, 24);
+  assert.equal(body.stats.decisionCount, 10);
   assert.equal("events" in body, false);
 });
 
@@ -50,7 +52,7 @@ test("events endpoint returns newest events and page routes delegate to assets",
 
   assert.equal(eventsResponse.status, 200);
   assert.equal(eventsBody.events[0].type, "decision");
-  assert.equal(eventsBody.events.length, 7);
+  assert.equal(eventsBody.events.length, 21);
   assert.equal(missing.status, 404);
   assert.equal(page.status, 200);
   assert.equal(await page.text(), "asset:/map");

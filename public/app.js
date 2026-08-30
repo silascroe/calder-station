@@ -18,6 +18,17 @@ function residentById(id) {
   return store.town?.residents.find((resident) => resident.id === id);
 }
 
+function relationshipsFor(id) {
+  return (store.town?.relationships ?? [])
+    .filter((relationship) => relationship.fromId === id || relationship.toId === id)
+    .map((relationship) => {
+      const otherId = relationship.fromId === id ? relationship.toId : relationship.fromId;
+      const other = residentById(otherId);
+      return other ? { relationship, other } : null;
+    })
+    .filter(Boolean);
+}
+
 function residentTime(value) {
   if (!value) return "—";
   return `${value.slice(11, 16)} UTC`;
@@ -95,6 +106,10 @@ function renderOverview() {
           <span>Rule decisions</span>
           <strong>${escapeHtml(town.stats.decisionCount)}</strong>
         </div>
+        <div class="clock-meta">
+          <span>Connections</span>
+          <strong>${escapeHtml(town.relationships?.length ?? 0)}</strong>
+        </div>
       </div>
     </section>
 
@@ -167,7 +182,7 @@ function renderMap() {
 function renderResidents() {
   const { town } = store;
   app.innerHTML = `
-    ${pageHeader("Rookwood / population", "Residents", "Three people, a great many possible problems.")}
+    ${pageHeader("Rookwood / population", "Residents", `${town.residents.length} people, a great many possible problems.`)}
     <section class="resident-list">${town.residents.map(residentCard).join("")}</section>
   `;
 }
@@ -177,6 +192,7 @@ function renderResidentDetail(id) {
   if (!resident) return renderNotFound();
 
   const recentEvents = store.events.filter((event) => event.actor === resident.name);
+  const relationships = relationshipsFor(id);
   app.innerHTML = `
     ${pageHeader("Resident file", resident.name, `${resident.role} / ${resident.location}`)}
     <section class="detail-grid">
@@ -190,6 +206,19 @@ function renderResidentDetail(id) {
           <div><span>location</span><strong>${escapeHtml(resident.location)}</strong></div>
           <div><span>next decision</span><strong>${escapeHtml(residentTime(resident.nextDecisionAt))}</strong></div>
           <div><span>decisions made</span><strong>${escapeHtml(resident.decisionCount)}</strong></div>
+        </div>
+        <div class="profile-connections">
+          <p class="eyebrow">Connections</p>
+          ${relationships.length ? `
+            <ul class="connection-list">
+              ${relationships.map(({ relationship, other }) => `
+                <li>
+                  ${routeLink(`/residents/${other.id}`, escapeHtml(other.name))}
+                  <span>${escapeHtml(relationship.kind)} · ${escapeHtml(relationship.strength)}%</span>
+                </li>
+              `).join("")}
+            </ul>
+          ` : `<p class="connection-empty">No recorded connections yet.</p>`}
         </div>
       </article>
       <article class="detail-events">

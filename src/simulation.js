@@ -8,7 +8,7 @@ const DAY_MS = 24 * 60 * MINUTE_MS;
 
 export const DEFAULT_START_TIME = "2026-08-31T00:00:00.000Z";
 export const DEFAULT_TICK_MINUTES = HOUR_MINUTES;
-export const DEFAULT_PREVIEW_TICKS = 22;
+export const DEFAULT_PREVIEW_TICKS = 24;
 export const MAX_PREVIEW_TICKS = 48;
 
 function asDate(value) {
@@ -169,12 +169,20 @@ function simulationDay(startedAt, now) {
   return Math.floor((asDate(now).getTime() - asDate(startedAt).getTime()) / DAY_MS) + 1;
 }
 
-export function createInitialTown({ seed = "rookwood-day-one", startTime = DEFAULT_START_TIME } = {}) {
+export function createInitialTown({
+  seed = "rookwood-day-one",
+  startTime = DEFAULT_START_TIME,
+  seedData = townSeed,
+} = {}) {
+  if (!seedData || !Array.isArray(seedData.locations) || !Array.isArray(seedData.residents)) {
+    throw new TypeError("seedData must include locations and residents arrays");
+  }
+
   const startedAt = asDate(startTime);
-  const ids = townSeed.residents.map(({ id }) => id);
+  const ids = seedData.residents.map(({ id }) => id);
   const state = {
-    id: townSeed.id,
-    name: townSeed.name,
+    id: seedData.id,
+    name: seedData.name,
     mode: "scripted-simulation-preview",
     persistence: "ephemeral",
     seed,
@@ -182,10 +190,11 @@ export function createInitialTown({ seed = "rookwood-day-one", startTime = DEFAU
     now: startedAt.toISOString(),
     day: 1,
     clock: formatClock(startedAt),
-    weather: townSeed.weather,
+    weather: seedData.weather,
     summary: "A replayable first-day simulation driven by ordinary game-AI rules.",
-    locations: townSeed.locations.map((location) => ({ ...location })),
+    locations: seedData.locations.map((location) => ({ ...location })),
     residents: [],
+    relationships: (seedData.relationships ?? []).map((relationship) => ({ ...relationship })),
     events: [],
     stats: {
       tickCount: 0,
@@ -199,10 +208,11 @@ export function createInitialTown({ seed = "rookwood-day-one", startTime = DEFAU
   // variation is intentionally deferred until the deterministic rules are
   // durable enough to test against.
 
-  state.residents = townSeed.residents.map((residentSeed) => {
+  state.residents = seedData.residents.map((residentSeed) => {
     const location = locationFor(state, residentSeed.initialLocationId);
     const resident = {
       ...residentSeed,
+      ...(residentSeed.routine ? { routine: { ...residentSeed.routine } } : {}),
       locationId: location.id,
       location: location.name,
       x: location.x,
@@ -220,7 +230,7 @@ export function createInitialTown({ seed = "rookwood-day-one", startTime = DEFAU
   appendEvent(state, {
     at: startedAt,
     type: "system",
-    text: "Rookwood's first day began",
+    text: `${seedData.name}'s first day began`,
     source: "simulation",
   });
 
@@ -278,12 +288,13 @@ export function runPreview({
   tickMinutes = DEFAULT_TICK_MINUTES,
   seed,
   startTime,
+  seedData,
 } = {}) {
   if (!Number.isInteger(ticks) || ticks < 0 || ticks > MAX_PREVIEW_TICKS) {
     throw new RangeError(`ticks must be an integer between 0 and ${MAX_PREVIEW_TICKS}`);
   }
 
-  let state = createInitialTown({ seed, startTime });
+  let state = createInitialTown({ seed, startTime, seedData });
   for (let tick = 0; tick < ticks; tick += 1) {
     state = advanceTown(state, { minutes: tickMinutes });
   }

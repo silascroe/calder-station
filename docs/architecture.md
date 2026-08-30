@@ -15,7 +15,7 @@ The model returns intent. The simulation remains the authority on what actually 
 
 ## Current implementation slice
 
-The repository currently implements the loop without a model: a seeded Rookwood state advances in hourly ticks, applies simple need changes, wakes residents at staggered routine slots, asks a scripted decision policy for an intent, validates and resolves that intent, and appends movement and decision events. `runPreview()` replays the same sequence from the same inputs, while the Worker exposes state and newest-first events as read-only projections. The preview is intentionally ephemeral and makes zero model calls. The seed is recorded as replay metadata; deterministic behavior comes from the rules and roster for now, with randomness deferred until it can be tested explicitly.
+The repository currently implements the loop without a model: a seeded ten-resident Rookwood state advances in hourly ticks, applies simple need changes, wakes residents at staggered routine slots, asks a scripted decision policy for an intent, validates and resolves that intent, and appends movement and decision events. The seed also contains eleven locations and twelve relationship edges, but relationships are not changing yet. `runPreview()` replays the same sequence from the same inputs, while the Worker exposes state and newest-first events as read-only projections. The preview is intentionally ephemeral and makes zero model calls. The seed is recorded as replay metadata; deterministic behavior comes from the rules and roster for now, with randomness deferred until it can be tested explicitly.
 
 ## Scheduling policy
 

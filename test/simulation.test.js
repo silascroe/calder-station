@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { tinyTownSeed } from "../src/demo-data.js";
 import { isPeakPeriod } from "../src/scheduler.js";
 import {
   DEFAULT_START_TIME,
@@ -11,33 +12,61 @@ import {
   townView,
 } from "../src/simulation.js";
 
-test("the seed creates three residents with staggered routine decisions", () => {
+test("the town seed creates ten residents, places, and relationships", () => {
   const town = createInitialTown();
   const decisionTimes = town.residents.map((resident) => resident.nextDecisionAt);
 
   assert.equal(town.now, DEFAULT_START_TIME);
   assert.equal(town.mode, "scripted-simulation-preview");
-  assert.equal(town.residents.length, 3);
-  assert.equal(new Set(decisionTimes).size, 3);
+  assert.equal(town.residents.length, 10);
+  assert.equal(town.locations.length, 11);
+  assert.equal(town.relationships.length, 12);
+  const residentIds = new Set(town.residents.map((resident) => resident.id));
+  assert.ok(town.relationships.every((relationship) => (
+    relationship.fromId !== relationship.toId
+    && residentIds.has(relationship.fromId)
+    && residentIds.has(relationship.toId)
+    && relationship.strength >= 0
+    && relationship.strength <= 100
+  )));
+  assert.equal(new Set(decisionTimes).size, 10);
   assert.ok(decisionTimes.every((time) => !isPeakPeriod(time)));
   assert.equal(town.events.length, 1);
   assert.equal(town.events[0].type, "system");
 });
 
 test("a preview advances the clock and lets each resident make a decision", () => {
-  const town = runPreview({ ticks: 22 });
+  const town = runPreview();
   const decisions = town.events.filter((event) => event.type === "decision");
   const movements = town.events.filter((event) => event.type === "movement");
 
-  assert.equal(town.now, "2026-08-31T22:00:00.000Z");
-  assert.equal(town.day, 1);
-  assert.equal(town.stats.tickCount, 22);
-  assert.equal(town.stats.decisionCount, 3);
-  assert.equal(decisions.length, 3);
-  assert.equal(new Set(decisions.map((event) => event.actorId)).size, 3);
-  assert.equal(movements.length, 3);
+  assert.equal(town.now, "2026-09-01T00:00:00.000Z");
+  assert.equal(town.day, 2);
+  assert.equal(town.stats.tickCount, 24);
+  assert.equal(town.stats.decisionCount, 10);
+  assert.equal(decisions.length, 10);
+  assert.equal(new Set(decisions.map((event) => event.actorId)).size, 10);
+  assert.equal(movements.length, 10);
   assert.ok(town.residents.every((resident) => resident.energy >= 0 && resident.energy <= 100));
   assert.ok(town.residents.every((resident) => resident.hunger >= 0 && resident.hunger <= 100));
+});
+
+test("the second day exercises ordinary meal and rest rules", () => {
+  const town = runPreview({ ticks: 48 });
+  const decisions = town.events.filter((event) => event.type === "decision");
+
+  assert.equal(town.stats.decisionCount, 20);
+  assert.ok(decisions.some((event) => event.text.startsWith("stopped to eat")));
+  assert.ok(town.residents.some((resident) => resident.lastAction === "rest"));
+});
+
+test("the tiny seed remains available as a compact regression scenario", () => {
+  const town = runPreview({ ticks: 22, seedData: tinyTownSeed });
+
+  assert.equal(town.residents.length, 3);
+  assert.equal(town.locations.length, 4);
+  assert.equal(town.relationships.length, 1);
+  assert.equal(town.stats.decisionCount, 3);
 });
 
 test("the same seed produces the same state and event history", () => {
@@ -58,11 +87,12 @@ test("advancing a town does not mutate the previous snapshot", () => {
 });
 
 test("views keep town state and newest-first events separate", () => {
-  const state = runPreview({ ticks: 22 });
+  const state = runPreview();
   const town = townView(state);
   const events = eventView(state);
 
   assert.equal("events" in town, false);
+  assert.equal(town.relationships.length, 12);
   assert.equal(events[0].at >= events.at(-1).at, true);
   assert.equal(events.length, state.events.length);
 });

@@ -118,6 +118,13 @@ h3 { margin: 0; font-size: 24px; }
 .profile-stats div { display: flex; justify-content: space-between; gap: 16px; padding-top: 11px; border-top: 1px solid var(--line); font-size: 12px; }
 .profile-stats span { color: var(--muted); }
 .profile-stats strong { color: var(--ink); font-weight: 500; text-align: right; }
+.profile-connections { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--line); }
+.connection-list { display: grid; gap: 11px; padding: 0; margin: 0; list-style: none; }
+.connection-list li { display: flex; justify-content: space-between; gap: 14px; font-size: 12px; }
+.connection-list a { color: var(--ink); }
+.connection-list a:hover { color: var(--accent); }
+.connection-list span, .connection-empty { color: var(--muted); }
+.connection-empty { margin: 0; font-size: 12px; }
 .detail-events h2 { margin-bottom: 32px; }
 .back-link { margin-top: 22px; }
 .empty-state { display: grid; place-items: start; min-height: 380px; padding-top: 80px; }
