@@ -34,7 +34,7 @@ Scripted planners first use naturally shared destinations. For a relationship wi
 
 ## State and persistence
 
-One Durable Object coordinates the town projection, event log, and hourly alarm. Residents are ordinary records, not separate Durable Objects. The event log is append-only and the projection stores only a small recent event context; the full history remains queryable through SQLite.
+One Durable Object coordinates the town projection, event log, and hourly alarm. Residents are ordinary records, not separate Durable Objects. The event log is append-only and the projection stores only a small recent event context; the full history remains queryable through SQLite. Reads use SQLite insertion order rather than lexical event IDs, and load repairs a missing or regressed projection sequence from the newest durable event before another ID can be issued.
 
 The production clock uses an explicit `pause-on-downtime` policy: one successful alarm advances exactly one simulated hour, and the next alarm is scheduled from completion. A long Worker outage therefore pauses Calder Station instead of triggering a model-call storm or silently fast-forwarding months. Health output exposes this policy, the last advanced interval, retry count, and next alarm.
 

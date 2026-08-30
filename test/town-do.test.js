@@ -21,13 +21,14 @@ class FakeSql {
     if (normalized.startsWith("SELECT id, event_json FROM town_events")) {
       return new Cursor([...this.eventRows.values()].map(({ id, event_json }) => ({ id, event_json })));
     }
+    if (normalized.startsWith("SELECT id FROM town_events ORDER BY rowid DESC")) {
+      const rows = [...this.eventRows.values()];
+      return new Cursor(rows.length > 0 ? [{ id: rows.at(-1).id }] : []);
+    }
     if (normalized.startsWith("SELECT event_json FROM town_events")) {
       const limit = bindings[0] ?? Number.POSITIVE_INFINITY;
-      const descending = normalized.includes("ORDER BY at DESC");
-      const rows = [...this.eventRows.values()].sort((left, right) => {
-        const result = left.at.localeCompare(right.at) || left.id.localeCompare(right.id);
-        return descending ? -result : result;
-      });
+      const rows = [...this.eventRows.values()];
+      if (normalized.includes("ORDER BY rowid DESC")) rows.reverse();
       return new Cursor(rows.slice(0, limit).map(({ event_json }) => ({ event_json })));
     }
     if (normalized.startsWith("INSERT INTO town_state")) {
@@ -165,6 +166,33 @@ test("current-revision evolved state persists runtime metadata backfills", async
   assert.ok(persisted.civicIncidents.chains["night-route"]);
   assert.equal(persisted.relationships[0].interactionCount, 0);
   assert.equal(persisted.stats.conflictedPlanCount, 0);
+});
+
+test("event history preserves insertion order past four-digit IDs and repairs a stale sequence", async () => {
+  const { town, storage } = makeTown();
+  const evolved = createInitialTown();
+  const at = "2026-09-01T00:00:00.000Z";
+  evolved.events = Array.from({ length: 10_000 }, (_, index) => ({
+    id: `event-${String(index + 1).padStart(4, "0")}`,
+    at,
+    time: "Day 2, 00:00",
+    actorId: null,
+    actor: "Town",
+    type: "system",
+    text: `history entry ${index + 1}`,
+    source: "test",
+  }));
+  delete evolved.stats.eventCount;
+  town.persist(evolved);
+
+  const newest = town.readEvents(2);
+  assert.deepEqual(newest.map(({ id }) => id), ["event-10000", "event-9999"]);
+
+  const state = await (await town.fetch(new Request("https://town.internal/state"))).json();
+  const persisted = JSON.parse(storage.sql.stateRow.state_json);
+  assert.equal(state.stats.eventCount, 10_001);
+  assert.equal(persisted.stats.eventCount, 10_001);
+  assert.ok(storage.sql.eventRows.has("event-10001"));
 });
 
 test("a due Sal decision uses one model plan and records its usage", async () => {

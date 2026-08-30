@@ -199,12 +199,20 @@ export class RookwoodTown {
     return this.sql
       .exec(
         `SELECT event_json FROM town_events
-         ORDER BY at DESC, id DESC
+         ORDER BY rowid DESC
          LIMIT ?`,
         limit,
       )
       .toArray()
       .map(({ event_json }) => JSON.parse(event_json));
+  }
+
+  latestEventSequence() {
+    const rows = this.sql
+      .exec("SELECT id FROM town_events ORDER BY rowid DESC LIMIT 1")
+      .toArray();
+    const match = /^event-(\d+)$/.exec(rows[0]?.id ?? "");
+    return match ? Number(match[1]) : 0;
   }
 
   async load({ scheduleAlarm = true } = {}) {
@@ -227,6 +235,13 @@ export class RookwoodTown {
     const stored = JSON.parse(rows[0].state_json);
     const previousSeedRevision = Number(stored.seedRevision ?? 0);
     const historyChanged = migrateStoredEvents(this.sql, previousSeedRevision);
+    const latestEventSequence = this.latestEventSequence();
+    stored.stats ??= {};
+    const storedEventCount = Number.isSafeInteger(stored.stats.eventCount)
+      ? stored.stats.eventCount
+      : 0;
+    const eventSequenceChanged = storedEventCount < latestEventSequence;
+    if (eventSequenceChanged) stored.stats.eventCount = latestEventSequence;
 
     // Keep only a small recent window in memory for the next decision. The
     // full history remains in SQLite and is never sent to the model.
@@ -252,7 +267,7 @@ export class RookwoodTown {
       runtimeChanged = true;
     }
 
-    if (reconciled.needsPersist || historyChanged || runtimeChanged) {
+    if (reconciled.needsPersist || historyChanged || eventSequenceChanged || runtimeChanged) {
       this.persist(state);
     }
 
