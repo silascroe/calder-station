@@ -15,6 +15,7 @@ import {
 } from "./civic-incidents.js";
 import { normalizeRelationship } from "./relationship-dynamics.js";
 import { resolveSocialIntentions } from "./social.js";
+import { schedulePlanActions } from "./travel.js";
 
 const MINUTE_MS = 60 * 1000;
 const HOUR_MINUTES = 60;
@@ -385,13 +386,16 @@ function recordPlanTelemetry(state, resident, plan, planAt) {
   }
 }
 
-function queueEntryFor(resident, plan, action, sequence, planAt) {
-  const offsetMinutes = action.offsetMinutes ?? sequence * 60;
-  const scheduledAt = new Date(planAt.getTime() + offsetMinutes * MINUTE_MS);
+function queueEntryFor(resident, plan, action, sequence, timing) {
+  const obligationDecision = plan.obligationDecisions?.find(({ actionIndex }) => actionIndex === sequence)
+    ?? (sequence === 0 ? plan.obligationDecision : null);
   return {
     id: `${resident.id}-plan-${resident.planCount}-action-${sequence + 1}`,
     sequence,
-    scheduledAt: scheduledAt.toISOString(),
+    plannedAt: timing.plannedAt,
+    scheduledAt: timing.scheduledAt,
+    travelMinutes: timing.travelMinutes,
+    serviceMinutes: timing.serviceMinutes,
     intent: {
       action: action.action,
       locationId: action.locationId,
@@ -403,8 +407,8 @@ function queueEntryFor(resident, plan, action, sequence, planAt) {
     socialIntentions: plan.socialIntentions
       .filter((intention) => (intention.actionIndex ?? 0) === sequence)
       .map((intention) => ({ ...intention })),
-    obligationDecision: sequence === 0 && plan.obligationDecision
-      ? { ...plan.obligationDecision }
+    obligationDecision: obligationDecision
+      ? { ...obligationDecision }
       : null,
   };
 }
@@ -425,8 +429,9 @@ function queuePlanActions(state, resident, plan, planAt) {
     });
   }
 
+  const timings = schedulePlanActions(state, resident, plan.actions, planAt);
   resident.actionQueue = plan.actions.map((action, sequence) => (
-    queueEntryFor(resident, plan, action, sequence, planAt)
+    queueEntryFor(resident, plan, action, sequence, timings[sequence])
   ));
   resident.nextActionAt = resident.actionQueue[0]?.scheduledAt ?? null;
 }
@@ -468,6 +473,7 @@ async function executePlan(state, resident, decisionAdapter, planAt) {
     actions: plan.actions.map((action) => ({ ...action })),
     socialIntentions: plan.socialIntentions.map((intention) => ({ ...intention })),
     obligationDecision: plan.obligationDecision ? { ...plan.obligationDecision } : null,
+    obligationDecisions: plan.obligationDecisions?.map((decision) => ({ ...decision })) ?? null,
     competingObligationCount,
     model: telemetry ? {
       attempted: Boolean(telemetry.attempted),

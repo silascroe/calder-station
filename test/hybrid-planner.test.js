@@ -9,6 +9,7 @@ function conflictFixture() {
   const town = createInitialTown();
   const resident = town.residents.find(({ id }) => id === "sal");
   const now = new Date(resident.nextPlanAt);
+  town.obligations[0].dueAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
   town.obligations.push(materializeObligation({
     id: "test-route-conflict",
     kind: "civic-request",
@@ -18,7 +19,7 @@ function conflictFixture() {
     requiredAction: "observe",
     title: "Amos Foster's route report",
     description: "The closing round depends on this report.",
-    dueAt: new Date(now.getTime() + 10 * 60 * 60 * 1000).toISOString(),
+    dueAt: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
   }, now));
   return { town, resident, now };
 }

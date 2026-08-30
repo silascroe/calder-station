@@ -58,7 +58,7 @@ flowchart LR
     K --> L[Read-only Folio UI]
 ```
 
-A planning turn produces a short ordered plan of at most five actions. The executor schedules those actions through the day and remains authoritative about what actually happens. Hard needs can interrupt an intention. A later planning turn can supersede unfinished work. Commitments can be fulfilled, delayed, missed, retried, and followed by authored downstream requests, but every loop has explicit cooldowns and caps.
+A planning turn produces a short ordered plan of at most five actions. Intended offsets are not teleport times: the executor adds deterministic walking time from the map and bounded service time for work, meals, observation, delivery, and rest. Hard needs can interrupt an intention. A later planning turn can supersede unfinished work. Due commitments are queued together when a physical ordering can reach them; commitments can still be fulfilled, delayed, missed, retried, and followed by authored downstream requests, but every loop has explicit cooldowns and caps.
 
 Resident turns span the whole simulated day. DeepSeek pricing windows apply only to the real request clock; the fictional town does not rearrange its lives around an API invoice.
 
@@ -83,7 +83,7 @@ Reports track event volume, resident plans and actions, relationship changes, co
 
 Normal CI and the default scenario command remain deterministic and make no paid calls. Deliberate model evaluation uses the same runner with an asynchronous DeepSeek adapter and an explicit pricing-policy bypass; it is never a browser-accessible mode.
 
-The checked-in evaluation matrix runs eight mutually exclusive Sal conflict states three times each. It varies which deadline comes first, which relationship is stronger or strained, and whether both commitments are urgent while Sal is tired and away from town. Every case passes through the real planner adapter, validator, queue, executor, expiry, and relationship consequences. It records the selected commitment, the fulfilled and broken outcomes, validation fallbacks, request IDs, cache hit/miss tokens, and an estimated bill. With a local key:
+The checked-in evaluation matrix runs eight physically impossible Sal conflict states three times each. Each promise is individually reachable, but map travel and service time prove that no ordering can meet both deadlines. The matrix varies deadline order, relationship strength, tension, and an away-from-town case. Every case passes through the real planner adapter, validator, queue, executor, expiry, and relationship consequences. It records the selected commitment, the fulfilled and broken outcomes, validation fallbacks, request IDs, cache hit/miss tokens, and an estimated bill. With a local key:
 
 ```sh
 DEEPSEEK_API_KEY=... npm run evaluate:model

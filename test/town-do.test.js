@@ -73,6 +73,9 @@ function makeTown(env = {}) {
 
 function addSalConflict(state, at) {
   const now = new Date(at);
+  state.obligations.find(({ id }) => id === "obligation-sal-vey-notice").dueAt = new Date(
+    now.getTime() + 60 * 60 * 1000,
+  ).toISOString();
   state.obligations.push(materializeObligation({
     id: "test-sal-route-report",
     kind: "civic-request",
@@ -82,7 +85,7 @@ function addSalConflict(state, at) {
     requiredAction: "observe",
     title: "Amos Foster's route report",
     description: "The square needs checking before the closing round.",
-    dueAt: new Date(now.getTime() + 13 * 60 * 60 * 1000).toISOString(),
+    dueAt: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
     renewable: false,
   }, now));
   return state;
@@ -246,6 +249,7 @@ test("a due Sal decision uses one model plan and records its usage", async () =>
   town.persist(initial);
 
   await town.alarm({ wallClock: new Date("2026-08-31T00:00:00.000Z") });
+  await town.alarm({ wallClock: new Date("2026-08-31T01:00:00.000Z") });
   const state = await (await town.fetch(new Request("https://town.internal/state"))).json();
 
   assert.equal(calls, 1);
@@ -278,6 +282,7 @@ test("a failed model request falls back without stopping the town", async () => 
   town.persist(initial);
 
   await town.alarm({ wallClock: new Date("2026-08-31T00:00:00.000Z") });
+  await town.alarm({ wallClock: new Date("2026-08-31T01:00:00.000Z") });
   const state = await (await town.fetch(new Request("https://town.internal/state"))).json();
   const events = [...storage.sql.eventRows.values()].map(({ event_json }) => JSON.parse(event_json));
 

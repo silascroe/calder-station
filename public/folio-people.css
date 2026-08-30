@@ -50,6 +50,9 @@
 .register-plan strong { color: #7b5c39; font: 400 17px var(--folio-serif); }
 .register-plan small { color: var(--folio-paper-muted); font-size: 10px; line-height: 1.45; }
 .register-plan .plan-source { color: #8a5b4c; }
+.plan-itinerary { display: grid; gap: 6px; margin: 8px 0 3px; padding: 9px 0 0; border-top: 1px solid var(--folio-paper-line); list-style: none; }
+.plan-itinerary li { display: grid; grid-template-columns: 58px 1fr; gap: 9px; color: var(--folio-paper-muted); font-size: 10px; line-height: 1.4; }
+.plan-itinerary time { color: #8b6840; font-variant-numeric: tabular-nums; }
 .resident-commitments { margin-top: 28px; padding-top: 20px; border-top: 3px double var(--folio-paper-line); }
 .resident-commitments .commitment-row { border-color: var(--folio-paper-line); }
 .resident-commitments .commitment-row p, .resident-commitments .commitment-row > small { color: var(--folio-paper-muted); }

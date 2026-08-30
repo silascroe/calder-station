@@ -1,6 +1,6 @@
 import { scriptedDecision } from "./scripted-decisions.js";
 
-export const DAILY_PLAN_VERSION = 2;
+export const DAILY_PLAN_VERSION = 3;
 export const PLAN_ACTIONS = Object.freeze(["work", "eat", "rest", "deliver", "observe"]);
 export const OBLIGATION_CHOICES = Object.freeze(["fulfill", "report_delay"]);
 export const MAX_PLAN_ACTIONS = 5;
@@ -316,6 +316,45 @@ export function validateDailyPlan(plan, { town, resident, now } = {}) {
     }
     if (decision.choice === "report_delay" && !hasDelayAction) {
       throw new RangeError("Reporting an obligation delay requires an observe action");
+    }
+  }
+  if (plan.obligationDecisions !== undefined) {
+    if (!Array.isArray(plan.obligationDecisions) || plan.obligationDecisions.length < 1 || plan.obligationDecisions.length > 3) {
+      throw new RangeError("Daily plan must contain between 1 and 3 queued obligation decisions");
+    }
+    const obligationIds = new Set();
+    const actionIndexes = new Set();
+    for (const decision of plan.obligationDecisions) {
+      if (!decision || !Number.isInteger(decision.actionIndex)
+        || decision.actionIndex < 0 || decision.actionIndex >= plan.actions.length) {
+        throw new RangeError("Queued obligation decision has an invalid action index");
+      }
+      if (obligationIds.has(decision.obligationId) || actionIndexes.has(decision.actionIndex)) {
+        throw new RangeError("Queued obligation decisions must use unique obligations and actions");
+      }
+      obligationIds.add(decision.obligationId);
+      actionIndexes.add(decision.actionIndex);
+      const obligation = (town.obligations ?? []).find(({ id }) => id === decision.obligationId);
+      if (!obligation || obligation.status !== "open" || obligation.ownerId !== resident.id) {
+        throw new RangeError("Queued obligation decision references an unavailable obligation");
+      }
+      if (!OBLIGATION_CHOICES.includes(decision.choice)
+        || typeof decision.note !== "string" || decision.note.length < 1 || decision.note.length > 160) {
+        throw new RangeError("Queued obligation decision must be a bounded obligation intent");
+      }
+      const action = plan.actions[decision.actionIndex];
+      const matchesAction = decision.choice === "fulfill"
+        ? action.action === (obligation.requiredAction ?? "deliver") && action.locationId === obligation.destinationId
+        : action.action === "observe";
+      if (!matchesAction) {
+        throw new RangeError("Queued obligation decision does not match its executable action");
+      }
+    }
+    if (plan.obligationDecision && !plan.obligationDecisions.some((decision) => (
+      decision.obligationId === plan.obligationDecision.obligationId
+      && decision.choice === plan.obligationDecision.choice
+    ))) {
+      throw new RangeError("Primary obligation decision is missing from the queued decisions");
     }
   }
   return plan;

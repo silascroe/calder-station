@@ -47,3 +47,7 @@ The choices varied, but only with deadline order: DeepSeek selected the earlier 
 This is a world-model defect, not a prompt-tuning problem. Before another paid revision, deterministic code should model bounded travel/service time, queue every feasible commitment, and prove that no ordering can meet all deadlines. The model should choose priority only for a conflict the executor has established as physically impossible.
 
 The complete v5 report is retained in GitHub Actions run `33329611618`.
+
+## Next revision
+
+`sal-physical-conflict-v6-2026-08-30` adds deterministic walking and service time, queues every due commitment after the selected priority, and calls a model only after a bounded permutation solver proves that no ordering can meet every deadline. Each matrix promise is individually reachable; the sacrifice is now a property of the simulated clock and map rather than of an artificial one-action evaluator. Genuine results are pending isolated staging deployment.

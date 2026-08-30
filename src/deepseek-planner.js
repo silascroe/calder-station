@@ -3,6 +3,7 @@ import {
   validateDailyPlan,
 } from "./daily-plans.js";
 import { obligationPlanForChoice } from "./obligations.js";
+import { bestObligationOrder, projectObligationOrder } from "./travel.js";
 
 export const DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions";
 export const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
@@ -111,6 +112,7 @@ function decisionObligations(state, resident, primary, now) {
       && candidate.status === "open"
       && candidate.id !== primary.id
       && new Date(candidate.dueAt) <= nextPlanningAt
+      && projectObligationOrder(state, resident, [candidate], now).allMeet
     ))
     .sort((left, right) => String(left.dueAt).localeCompare(String(right.dueAt)) || left.id.localeCompare(right.id))
     .slice(0, 3);
@@ -128,6 +130,7 @@ function downstreamEffect(obligation) {
 }
 
 function choiceConsequence(state, candidate, obligations, now) {
+  const resident = (state.residents ?? []).find(({ id }) => id === candidate.ownerId);
   const relationship = relationshipBetween(state, candidate.ownerId, candidate.counterpartyId);
   const dueInMinutes = Math.max(0, Math.round((new Date(candidate.dueAt) - new Date(now)) / 60_000));
   const exposed = obligations
@@ -162,6 +165,13 @@ function choiceConsequence(state, candidate, obligations, now) {
       tensionDelta: -6,
       downstream: downstreamEffect(candidate),
     },
+    projectedOrder: bestObligationOrder(
+      state,
+      resident,
+      [candidate, ...obligations.filter(({ id }) => id !== candidate.id)],
+      now,
+      { firstId: candidate.id },
+    ).projection,
     exposedCommitments: exposed,
   };
 }
@@ -247,7 +257,7 @@ export function buildDeepSeekContext({ state, resident, now, obligation } = {}) 
     competingObligations: competingObligations(state, resident, obligation.id),
     decisionWindow: {
       nextPlanningAt: new Date(new Date(now).getTime() + 24 * 60 * 60 * 1000).toISOString(),
-      rule: "Only the selected commitment is acted on during this planning turn. Every unselected commitment remains open and may break before the next turn.",
+      rule: "The selected commitment is attempted first and deterministic code queues the others afterward. Every offered ordering misses at least one deadline; choose which consequence Sal should accept.",
     },
     legalChoices: legalObligationChoices(state, resident, obligation, now),
   };

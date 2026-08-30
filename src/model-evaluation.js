@@ -6,7 +6,7 @@ import { advanceTown, createInitialTown } from "./simulation.js";
 
 const MINUTE_MS = 60 * 1000;
 
-export const MODEL_EVALUATION_REVISION = "sal-consequential-conflict-v5-2026-08-30";
+export const MODEL_EVALUATION_REVISION = "sal-physical-conflict-v6-2026-08-30";
 export const MODEL_EVALUATION_REPETITIONS = 3;
 export const MODEL_EVALUATION_CONCURRENCY = 3;
 
@@ -17,14 +17,14 @@ export const DEEPSEEK_V4_FLASH_USD_PER_MILLION = Object.freeze({
 });
 
 const SCENARIOS = Object.freeze([
-  Object.freeze({ id: "balanced", energy: 72, hunger: 32, locationId: "square", noticeStrength: 62, routeStrength: 52, noticeTension: 0, routeTension: 0, noticeDueMinutes: 4 * 60, routeDueMinutes: 8 * 60 }),
-  Object.freeze({ id: "route-deadline", energy: 72, hunger: 32, locationId: "square", noticeStrength: 62, routeStrength: 52, noticeTension: 0, routeTension: 0, noticeDueMinutes: 8 * 60, routeDueMinutes: 2 * 60 }),
-  Object.freeze({ id: "notice-deadline", energy: 72, hunger: 32, locationId: "square", noticeStrength: 62, routeStrength: 52, noticeTension: 0, routeTension: 0, noticeDueMinutes: 2 * 60, routeDueMinutes: 8 * 60 }),
-  Object.freeze({ id: "route-trust", energy: 72, hunger: 32, locationId: "square", noticeStrength: 24, routeStrength: 88, noticeTension: 0, routeTension: 0, noticeDueMinutes: 4 * 60, routeDueMinutes: 8 * 60 }),
-  Object.freeze({ id: "notice-trust", energy: 72, hunger: 32, locationId: "square", noticeStrength: 88, routeStrength: 24, noticeTension: 0, routeTension: 0, noticeDueMinutes: 8 * 60, routeDueMinutes: 4 * 60 }),
-  Object.freeze({ id: "route-strained", energy: 72, hunger: 32, locationId: "square", noticeStrength: 62, routeStrength: 46, noticeTension: 0, routeTension: 30, noticeDueMinutes: 4 * 60, routeDueMinutes: 8 * 60 }),
-  Object.freeze({ id: "notice-strained", energy: 72, hunger: 32, locationId: "square", noticeStrength: 46, routeStrength: 62, noticeTension: 30, routeTension: 0, noticeDueMinutes: 8 * 60, routeDueMinutes: 4 * 60 }),
-  Object.freeze({ id: "both-urgent", energy: 24, hunger: 70, locationId: "farm", noticeStrength: 62, routeStrength: 62, noticeTension: 8, routeTension: 8, noticeDueMinutes: 30, routeDueMinutes: 45 }),
+  Object.freeze({ id: "balanced", energy: 72, hunger: 32, locationId: "square", noticeStrength: 62, routeStrength: 52, noticeTension: 0, routeTension: 0, noticeDueMinutes: 25, routeDueMinutes: 25 }),
+  Object.freeze({ id: "route-deadline", energy: 72, hunger: 32, locationId: "square", noticeStrength: 62, routeStrength: 52, noticeTension: 0, routeTension: 0, noticeDueMinutes: 35, routeDueMinutes: 15 }),
+  Object.freeze({ id: "notice-deadline", energy: 72, hunger: 32, locationId: "square", noticeStrength: 62, routeStrength: 52, noticeTension: 0, routeTension: 0, noticeDueMinutes: 15, routeDueMinutes: 35 }),
+  Object.freeze({ id: "route-trust", energy: 72, hunger: 32, locationId: "square", noticeStrength: 24, routeStrength: 88, noticeTension: 0, routeTension: 0, noticeDueMinutes: 25, routeDueMinutes: 25 }),
+  Object.freeze({ id: "notice-trust", energy: 72, hunger: 32, locationId: "square", noticeStrength: 88, routeStrength: 24, noticeTension: 0, routeTension: 0, noticeDueMinutes: 25, routeDueMinutes: 25 }),
+  Object.freeze({ id: "route-strained", energy: 72, hunger: 32, locationId: "square", noticeStrength: 62, routeStrength: 46, noticeTension: 0, routeTension: 30, noticeDueMinutes: 25, routeDueMinutes: 25 }),
+  Object.freeze({ id: "notice-strained", energy: 72, hunger: 32, locationId: "square", noticeStrength: 46, routeStrength: 62, noticeTension: 30, routeTension: 0, noticeDueMinutes: 25, routeDueMinutes: 25 }),
+  Object.freeze({ id: "both-urgent", energy: 24, hunger: 70, locationId: "farm", noticeStrength: 62, routeStrength: 62, noticeTension: 8, routeTension: 8, noticeDueMinutes: 70, routeDueMinutes: 70 }),
 ]);
 
 function relationshipBetween(state, firstId, secondId) {

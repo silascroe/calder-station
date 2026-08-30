@@ -42,7 +42,8 @@ test("the Folio distinguishes causal history from routine telemetry", () => {
   assert.match(app, /baselineStrength/);
   assert.match(app, /api\/events\?limit=200/);
   assert.match(app, /Follows \$\{parent\.title\}/);
-  assert.match(app, /DeepSeek chose to/);
+  assert.match(app, /DeepSeek prioritized/);
+  assert.match(app, /plan-itinerary/);
   assert.doesNotMatch(app, /DeepSeek shaped this decision/);
   assert.doesNotMatch(app, /Obligation:.*obligation\.status/);
 });

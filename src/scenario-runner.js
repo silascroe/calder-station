@@ -353,6 +353,14 @@ function invariantReport(initial, state) {
           locationId: action.intent?.locationId,
         });
       }
+      if (action.travelMinutes !== undefined
+        && (!Number.isFinite(action.travelMinutes) || action.travelMinutes < 0)) {
+        invalidQueueEntries.push({ residentId: resident.id, id: action.id, reason: "invalid travel minutes" });
+      }
+      if (action.serviceMinutes !== undefined
+        && (!Number.isFinite(action.serviceMinutes) || action.serviceMinutes < 0)) {
+        invalidQueueEntries.push({ residentId: resident.id, id: action.id, reason: "invalid service minutes" });
+      }
     }
   }
   const overdueOpenObligations = (state.obligations ?? [])

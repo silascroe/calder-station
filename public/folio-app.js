@@ -442,10 +442,11 @@ function planSummary(resident) {
   const decidedObligation = decision?.obligationId ? obligationById(decision.obligationId) : null;
   const decisionAction = decision?.choice === "report_delay" ? "delay" : "fulfill";
   const modelStatus = resident.dailyPlan?.model?.fallback
-    ? `Scripted fallback chose to ${decisionAction} ${decidedObligation?.title ?? "the commitment"}`
+    ? `Scripted fallback prioritized ${decisionAction === "fulfill" ? "" : "delaying "}${decidedObligation?.title ?? "the commitment"}`
     : resident.dailyPlan?.model?.attempted && decision
-      ? `DeepSeek chose to ${decisionAction} ${decidedObligation?.title ?? "the commitment"}`
+      ? `DeepSeek prioritized ${decisionAction === "fulfill" ? "" : "delaying "}${decidedObligation?.title ?? "the commitment"}`
       : null;
+  const itinerary = (resident.actionQueue ?? []).slice(0, 4);
 
   return `
     <div class="register-plan">
@@ -453,6 +454,11 @@ function planSummary(resident) {
       <strong>${escapeHtml(actionLabel(action))}${plannedLocation ? ` at ${escapeHtml(plannedLocation.name)}` : ""}</strong>
       ${resident.dailyPlan.reason ? `<small>${escapeHtml(resident.dailyPlan.reason)}</small>` : ""}
       ${resident.actionQueue?.length ? `<small>${resident.actionQueue.length} queued action${resident.actionQueue.length === 1 ? "" : "s"}</small>` : ""}
+      ${itinerary.length ? `<ol class="plan-itinerary">${itinerary.map((entry) => {
+        const place = locationById(entry.intent?.locationId);
+        const walk = entry.travelMinutes > 0 ? ` · ${entry.travelMinutes} min walk` : "";
+        return `<li><time>${escapeHtml(residentTime(entry.scheduledAt))}</time><span>${escapeHtml(actionLabel(entry.intent?.action))}${place ? ` at ${escapeHtml(place.name)}` : ""}${escapeHtml(walk)}</span></li>`;
+      }).join("")}</ol>` : ""}
       ${socialTarget ? `<small>Wants a word with ${escapeHtml(socialTarget.name)}</small>` : ""}
       ${obligation ? `<small>Next commitment: ${escapeHtml(obligation.title)} · ${escapeHtml(obligationDueLabel(obligation))}</small>` : ""}
       ${modelStatus ? `<small class="plan-source">${escapeHtml(modelStatus)}</small>` : ""}

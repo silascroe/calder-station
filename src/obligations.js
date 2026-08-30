@@ -4,6 +4,10 @@ import {
   scriptedDailyPlan,
 } from "./daily-plans.js";
 import { applyCommitmentOutcome } from "./relationship-dynamics.js";
+import {
+  bestObligationOrder,
+  obligationsBeforeNextTurn,
+} from "./travel.js";
 
 const MINUTE_MS = 60 * 1000;
 
@@ -79,17 +83,21 @@ export function obligationPlanForChoice({
   }
 
   const base = scriptedDailyPlan({ town, resident, now });
-  const requiredAction = obligation.requiredAction ?? "deliver";
   const fulfilling = choice === "fulfill";
+  const actionForObligation = (candidate, offsetMinutes) => ({
+    ...base.actions[0],
+    action: candidate.requiredAction ?? "deliver",
+    locationId: candidate.destinationId,
+    offsetMinutes,
+    reason: `${candidate.title} is due soon`,
+    status: (candidate.requiredAction ?? "deliver") === "work"
+      ? "Taking on the promised work"
+      : "Taking the direct route",
+    mood: "Determined",
+  });
   const action = fulfilling
     ? {
-      ...base.actions[0],
-      action: requiredAction,
-      locationId: obligation.destinationId,
-      offsetMinutes: 0,
-      reason: `${obligation.title} is due soon`,
-      status: requiredAction === "work" ? "Taking on the promised work" : "Taking the direct route",
-      mood: "Determined",
+      ...actionForObligation(obligation, 0),
     }
     : {
       ...base.actions[0],
@@ -100,10 +108,38 @@ export function obligationPlanForChoice({
       status: "Reporting a delay",
       mood: "Uneasy",
     };
-  const actions = [action, ...base.actions.slice(1, MAX_PLAN_ACTIONS)];
-  const socialIntentions = base.socialIntentions.filter((intention) => {
-    const actionIndex = intention.actionIndex ?? 0;
-    return actions[actionIndex]?.locationId === intention.locationId;
+  const due = fulfilling
+    ? obligationsBeforeNextTurn(town, resident, now).filter(({ id }) => id !== obligation.id)
+    : [];
+  const ordered = fulfilling
+    ? bestObligationOrder(town, resident, [obligation, ...due], now, { firstId: obligation.id }).order
+    : [obligation];
+  const commitmentActions = fulfilling
+    ? ordered.map((candidate, index) => (
+      actionForObligation(candidate, index)
+    ))
+    : [action];
+  const routine = base.actions.slice(1);
+  const rest = [...routine].reverse().find(({ action: routineAction }) => routineAction === "rest") ?? null;
+  const nonRest = routine.filter((candidate) => candidate !== rest);
+  const routineCapacity = Math.max(0, MAX_PLAN_ACTIONS - commitmentActions.length - (rest ? 1 : 0));
+  const actions = [...commitmentActions, ...nonRest.slice(0, routineCapacity), ...(rest ? [rest] : [])]
+    .slice(0, MAX_PLAN_ACTIONS)
+    .sort((left, right) => (left.offsetMinutes ?? 0) - (right.offsetMinutes ?? 0));
+  const obligationDecisions = fulfilling
+    ? ordered.map((candidate, index) => ({
+      actionIndex: actions.indexOf(commitmentActions[index]),
+      obligationId: candidate.id,
+      choice: "fulfill",
+      note: index === 0 ? note : "queued after the selected commitment if time permits",
+    }))
+    : [{ actionIndex: actions.indexOf(action), obligationId: obligation.id, choice, note }];
+  const socialIntentions = base.socialIntentions.flatMap((intention) => {
+    const baseAction = base.actions[intention.actionIndex ?? 0];
+    const actionIndex = actions.indexOf(baseAction);
+    return actionIndex >= 0 && actions[actionIndex].locationId === intention.locationId
+      ? [{ ...intention, actionIndex }]
+      : [];
   });
 
   return {
@@ -120,6 +156,7 @@ export function obligationPlanForChoice({
       choice,
       note,
     },
+    obligationDecisions,
   };
 }
 
@@ -128,7 +165,10 @@ export function obligationPlanForChoice({
  * the town remains playable even when DeepSeek is unavailable.
  */
 export function scriptedObligationPlan({ town, resident, now } = {}) {
-  const obligation = openObligationFor(town, resident.id);
+  const due = obligationsBeforeNextTurn(town, resident, now);
+  const obligation = due.length > 1
+    ? bestObligationOrder(town, resident, due, now).order[0]
+    : openObligationFor(town, resident.id);
   if (!obligation) return scriptedDailyPlan({ town, resident, now });
 
   const canTakeDirectRoute = resident.energy > 35 && resident.hunger < 94;
