@@ -38,6 +38,14 @@ Keep these concerns separate:
 
 An LLM response should never be allowed to mutate storage directly. That is how a funny town becomes an expensive bug farm.
 
+## Durable Object boundary
+
+The first persistent town is one SQLite-backed Durable Object, `RookwoodTown`, bound to the Worker as `TOWN`. It owns the Rookwood projection, its append-only event rows, and the alarm that advances the scripted simulation. Residents are records inside the town, not separate objects by default.
+
+The object uses two small tables: `town_state` stores the current serialized projection without event history, and `town_events` stores immutable event records. A Worker request reads through the object; an alarm advances the domain state and persists it. This keeps storage and wake-up mechanics outside the simulation rules.
+
+The default API uses the persistent object when the binding is present. A request with `ticks` explicitly uses the ephemeral replay path, which preserves a cheap deterministic inspection tool and keeps tests independent of platform storage.
+
 ## Cost guardrails for the eventual model adapter
 
 - Use structured JSON with a small output budget.
@@ -54,8 +62,9 @@ The dashboard is a separate read-only window into the simulation. It should cons
 
 The first useful surface is deliberately small: a town overview, a resident list, a map-like location view, and a chronological event feed. Client-side routes such as `/map` and `/residents/mara` can exist before the simulation is real by rendering fixture data. This gives the project a visible feedback loop without coupling the UI to unfinished storage.
 
-The deployed dashboard reads `/api/town` and `/api/events`. It currently receives a deterministic preview recomputed per request, which is enough to exercise the viewer without pretending that persistence exists. Polling will be sufficient for a tiny persistent town. A live stream can be added later without changing the page-level route model.
+The deployed dashboard reads `/api/town` and `/api/events`. It now has a persistent path backed by the town object, while `ticks` remains an explicit replay path. Polling is sufficient for a tiny persistent town. A live stream can be added later without changing the page-level route model.
 
 ## Infrastructure direction
 
-For a small deployment, one coordinator plus durable storage is enough. Residents should be rows or records, not one Durable Object and one workflow per personality by default. The next infrastructure slice is D1 for the event log and state projection, followed by one coordinator heartbeat. Cloudflare adapters should provide durability and wake-ups, not hide the domain rules.
+For a small deployment, one coordinator plus durable storage is enough. Residents should be rows or records, not one Durable Object and one workflow per personality by default. D1 is optional for later cross-town queries, analytics, administration, or reporting; it is not needed for Rookwood's first persistent state. The next infrastructure-adjacent work is reliability around the existing alarm and then a daily-plan interface in the domain layer.
+

@@ -4,6 +4,20 @@
   "main": "src/worker.js",
   "compatibility_date": "2026-08-30",
   "workers_dev": true,
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "TOWN",
+        "class_name": "RookwoodTown"
+      }
+    ]
+  },
+  "exports": {
+    "RookwoodTown": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",

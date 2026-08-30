@@ -4,6 +4,9 @@ import {
   runPreview,
   townView,
 } from "./simulation.js";
+import { RookwoodTown, TOWN_NAME } from "./town-do.js";
+
+export { RookwoodTown };
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -25,6 +28,24 @@ function previewFromUrl(url) {
   return runPreview(previewOptions(url));
 }
 
+function shouldUsePersistentTown(url, env) {
+  return typeof env?.TOWN?.getByName === "function"
+    && !url.searchParams.has("ticks")
+    && url.searchParams.get("preview") !== "1";
+}
+
+function persistentRequest(url, path) {
+  const target = new URL(url);
+  target.pathname = path;
+  target.search = "";
+  return new Request(target, { method: "GET" });
+}
+
+async function persistentApi(env, url, path) {
+  const stub = env.TOWN.getByName(TOWN_NAME);
+  return stub.fetch(persistentRequest(url, path));
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -34,6 +55,10 @@ export default {
 
       try {
         if (url.pathname === "/api/health") {
+          if (shouldUsePersistentTown(url, env)) {
+            return await persistentApi(env, url, "/health");
+          }
+
           const state = previewFromUrl(url);
           return json({
             ok: true,
@@ -48,10 +73,18 @@ export default {
         }
 
         if (url.pathname === "/api/town") {
+          if (shouldUsePersistentTown(url, env)) {
+            return await persistentApi(env, url, "/state");
+          }
+
           return json(townView(previewFromUrl(url)));
         }
 
         if (url.pathname === "/api/events") {
+          if (shouldUsePersistentTown(url, env)) {
+            return await persistentApi(env, url, "/events");
+          }
+
           const state = previewFromUrl(url);
           return json({
             events: eventView(state),

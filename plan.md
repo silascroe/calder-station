@@ -6,7 +6,8 @@ This is a direction document, not a promise to build every item immediately. The
 
 - Ten-resident Rookwood seed with eleven locations and twelve seeded relationships.
 - Deterministic scripted game AI; no model calls.
-- Ephemeral state, replayable previews, and a read-only dashboard.
+- One SQLite-backed `RookwoodTown` Durable Object for persistent state, events, and an hourly alarm heartbeat when deployed.
+- A read-only dashboard with an explicit ephemeral preview fallback via `ticks`.
 - The original three-resident seed remains available as a compact regression scenario.
 
 ## North-star architecture
@@ -55,11 +56,11 @@ A resident's statement should remain that resident's statement. It should not si
 
 Keep expanding the ordinary rules and event types while preserving replayability, bounded state, and readable dashboard output.
 
-### 2. Make one town persistent
+### 2. Make one town persistent — foundation landed
 
-Move one town into a SQLite-backed Durable Object. Persist the event log and current state projection there, and use an alarm to wake the object for the next meaningful simulation step. Route all state-changing work through that town object so scheduled work, dashboard requests, and future controls are serialized. Add checkpoints, retries, and an explicit simulation clock. Keep world rules in the domain layer, outside the public request handler.
+The repository now has one SQLite-backed `RookwoodTown` object. It persists the current projection and event log, exposes read-only state/event/health reads through the Worker, and uses an alarm to advance the scripted simulation by one simulated hour per wall-clock hour. The object is configured with the current SQLite class export format and remains one coordinator for the whole town.
 
-Do not add D1 merely because it is a database. Introduce it when the project has a real need for shared relational queries beyond one town object.
+The remaining reliability work here is deliberately unglamorous: checkpoints, retries, alarm observability, and a clear simulation clock before model calls are allowed. Do not add D1 merely because it is a database. Introduce it when the project has a real need for shared relational queries beyond one town object.
 
 ### 3. Introduce a daily-plan interface
 
@@ -85,3 +86,4 @@ Ten residents are enough for the first meaningful town. Increase population afte
 - No giant unfiltered transcript in every prompt.
 - No automatic publishing, merging, deleting, or other irreversible side effects by default.
 - Preserve a small deterministic scenario for fast regression tests.
+
