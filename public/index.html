@@ -3,32 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="A window into the Town simulation." />
-    <title>Town — Rookwood</title>
+    <meta name="description" content="A living register of the persistent town of Rookwood." />
+    <title>Rookwood — Town Register</title>
     <link rel="stylesheet" href="/styles.css" />
-    <link rel="stylesheet" href="/map.css" />
-    <script type="module" src="/app.js"></script>
+    <link rel="stylesheet" href="/folio-base.css" />
+    <link rel="stylesheet" href="/folio-town.css" />
+    <link rel="stylesheet" href="/folio-map.css" />
+    <link rel="stylesheet" href="/folio-people.css" />
+    <script type="module" src="/folio-app.js"></script>
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
         <a class="brand" href="/" data-route aria-label="Rookwood town view">
           <span class="brand-mark">R</span>
-          <span><strong>Rookwood</strong><small>Town view</small></span>
+          <span><strong>Rookwood</strong><small>A town continuing</small></span>
         </a>
         <nav class="nav" aria-label="Primary navigation">
           <a href="/" data-route data-nav="/">Town</a>
           <a href="/map" data-route data-nav="/map">Map</a>
           <a href="/residents" data-route data-nav="/residents">People</a>
         </nav>
-        <div class="status-chip"><span class="status-dot"></span><span id="connection-label">Scripted rules</span></div>
+        <div class="status-chip"><span class="status-dot"></span><span id="connection-label">Opening register</span></div>
       </header>
 
       <main id="app" aria-live="polite"></main>
 
       <footer class="footer">
-        <span>ROOKWOOD / PERSISTENT TOWN</span>
-        <span>Read-only window · deterministic world</span>
+        <span>ROOKWOOD / PERSISTENT TOWN REGISTER</span>
+        <span>Read-only window · one ordinary hour at a time</span>
       </footer>
     </div>
   </body>
