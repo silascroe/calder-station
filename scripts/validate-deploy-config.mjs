@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { MODEL_EVALUATION_REVISION } from "../src/model-evaluation.js";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 export function validateDeployConfig(config) {
@@ -30,6 +32,8 @@ export function validateDeployConfig(config) {
   }
   if (!staging.vars?.MODEL_EVALUATION_REVISION) {
     errors.push("staging must declare MODEL_EVALUATION_REVISION for bounded paid evaluation");
+  } else if (staging.vars.MODEL_EVALUATION_REVISION !== MODEL_EVALUATION_REVISION) {
+    errors.push(`staging MODEL_EVALUATION_REVISION must match ${MODEL_EVALUATION_REVISION}`);
   }
   if (!Array.isArray(staging.triggers?.crons) || staging.triggers.crons.length !== 1) {
     errors.push("staging must declare exactly one scheduled model-evaluation trigger");

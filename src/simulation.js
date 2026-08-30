@@ -127,6 +127,8 @@ function appendEvent(state, {
   relatedActorId = null,
   locationId = null,
   relationshipId = null,
+  relationshipDelta = null,
+  tensionDelta = null,
   obligationId = null,
   action = null,
   type,
@@ -153,6 +155,8 @@ function appendEvent(state, {
   if (relatedActorId) event.relatedActorId = relatedActorId;
   if (locationId) event.locationId = locationId;
   if (relationshipId) event.relationshipId = relationshipId;
+  if (Number.isFinite(relationshipDelta) && relationshipDelta !== 0) event.relationshipDelta = relationshipDelta;
+  if (Number.isFinite(tensionDelta) && tensionDelta !== 0) event.tensionDelta = tensionDelta;
   if (obligationId) event.obligationId = obligationId;
   if (action) event.action = action;
   state.events.push(event);

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 import { validateDeployConfig } from "../scripts/validate-deploy-config.mjs";
+import { MODEL_EVALUATION_REVISION } from "../src/model-evaluation.js";
 import worker from "../src/worker.js";
 
 const config = JSON.parse(fs.readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
@@ -13,7 +14,7 @@ test("production and staging declare isolated persistent bindings", () => {
   assert.equal(result.stagingWorker, "town-dashboard-staging");
   assert.equal(result.durableObjectClass, "RookwoodTown");
   assert.equal(config.env.staging.triggers.crons.length, 1);
-  assert.ok(config.env.staging.vars.MODEL_EVALUATION_REVISION);
+  assert.equal(config.env.staging.vars.MODEL_EVALUATION_REVISION, MODEL_EVALUATION_REVISION);
 });
 
 test("a configured environment cannot masquerade as an ephemeral town without TOWN", async () => {

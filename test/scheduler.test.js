@@ -57,7 +57,7 @@ test("weekends are entirely available for routine work", () => {
   assert.equal(windows[0].end.toISOString(), "2026-09-06T00:00:00.000Z");
 });
 
-test("daily decision slots are spread and never land in peak time", () => {
+test("daily decision slots span the simulated day without provider-price distortion", () => {
   const residentIds = Array.from({ length: 12 }, (_, index) => `resident-${index}`);
   const plan = spreadDailyDecisionTimes({
     day: "2026-08-31T00:00:00Z",
@@ -67,8 +67,9 @@ test("daily decision slots are spread and never land in peak time", () => {
 
   assert.equal(plan.length, residentIds.length);
   assert.equal(new Set(timestamps).size, residentIds.length);
-  assert.ok(plan.every(({ scheduledAt }) => !isPeakPeriod(scheduledAt)));
-  assert.ok(Math.max(...timestamps) - Math.min(...timestamps) > 4 * 60 * 60 * 1000);
+  assert.ok(plan.some(({ scheduledAt }) => isPeakPeriod(scheduledAt)));
+  assert.ok(Math.max(...timestamps) - Math.min(...timestamps) > 20 * 60 * 60 * 1000);
+  assert.ok(plan.every(({ requestedAt, scheduledAt }) => requestedAt.getTime() === scheduledAt.getTime()));
 });
 
 test("the same roster and day produce the same plan", () => {

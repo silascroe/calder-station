@@ -32,7 +32,7 @@
       "name": "town-dashboard-staging",
       "vars": {
         "TOWN_ENV": "staging",
-        "MODEL_EVALUATION_REVISION": "sal-obligation-v1-2026-08-30"
+        "MODEL_EVALUATION_REVISION": "sal-competing-obligations-v2-2026-08-30"
       },
       "triggers": {
         "crons": ["15 * * * *"]

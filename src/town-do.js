@@ -12,6 +12,7 @@ import {
   townView,
 } from "./simulation.js";
 import { planResidentDecision } from "./hybrid-planner.js";
+import { scriptedObligationPlan } from "./obligations.js";
 
 // Keep the exported name and production key stable. Renaming the public town
 // must not strand the existing production Durable Object behind a new object
@@ -24,6 +25,8 @@ export const HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000;
 export const DEFAULT_EVENT_LIMIT = 80;
 export const MAX_EVENT_LIMIT = 200;
 const MODEL_EVALUATION_KEY_PREFIX = "model-evaluation:";
+const MODEL_DECISION_KEY_PREFIX = "model-decision:";
+const ALARM_ATTEMPT_KEY = "alarm-attempt";
 
 export function townEnvironment(env = {}) {
   return env.TOWN_ENV === STAGING_ENVIRONMENT
@@ -203,7 +206,7 @@ export class RookwoodTown {
       .map(({ event_json }) => JSON.parse(event_json));
   }
 
-  async load() {
+  async load({ scheduleAlarm = true } = {}) {
     const rows = this.sql
       .exec("SELECT state_json FROM town_state WHERE id = ?", this.storageKey)
       .toArray();
@@ -216,7 +219,7 @@ export class RookwoodTown {
         ? "A disposable staging town for testing deterministic rules."
         : "A small town continuing under deterministic game-AI rules.";
       this.persist(state);
-      await this.ensureAlarm();
+      if (scheduleAlarm) await this.ensureAlarm();
       return state;
     }
 
@@ -252,7 +255,7 @@ export class RookwoodTown {
       this.persist(state);
     }
 
-    await this.ensureAlarm();
+    if (scheduleAlarm) await this.ensureAlarm();
     return state;
   }
 
@@ -324,6 +327,13 @@ export class RookwoodTown {
           evaluationRevision,
           evaluationStatus: evaluation?.status
             ?? (evaluationRevision && !this.env?.DEEPSEEK_API_KEY ? "blocked-missing-key" : evaluationRevision ? "pending" : null),
+          clockPolicy: state.operations?.catchUpPolicy ?? "pause-on-downtime",
+          simulationStepMinutes: SIMULATION_STEP_MINUTES,
+          heartbeatIntervalMinutes: HEARTBEAT_INTERVAL_MS / (60 * 1000),
+          lastHeartbeatAt: state.operations?.lastHeartbeatAt ?? null,
+          lastHeartbeatRetryCount: state.operations?.lastHeartbeatRetryCount ?? 0,
+          lastHeartbeatAdvancedFrom: state.operations?.lastHeartbeatAdvancedFrom ?? null,
+          lastHeartbeatAdvancedTo: state.operations?.lastHeartbeatAdvancedTo ?? null,
           alarmAt: alarmAt === null ? null : new Date(alarmAt).toISOString(),
           serverTime: new Date().toISOString(),
         });
@@ -355,15 +365,85 @@ export class RookwoodTown {
     wallClock = new Date(),
     bypassPeakPricing = false,
   } = {}) {
-    return planResidentDecision({ town, resident, now }, {
+    const decisionKey = `${MODEL_DECISION_KEY_PREFIX}${resident.id}:${new Date(now).toISOString()}`;
+    const storage = this.ctx.storage;
+    const prior = typeof storage.get === "function" ? await storage.get(decisionKey) : null;
+    if (prior?.status === "complete" && prior.plan) return clone(prior.plan);
+    if (prior?.status === "pending") {
+      return {
+        ...scriptedObligationPlan({ town, resident, now }),
+        modelTelemetry: {
+          attempted: false,
+          fallback: true,
+          skipped: true,
+          errorCode: "interrupted-request-guard",
+          policyReason: "prior-request-outcome-unknown",
+          model: this.env?.DEEPSEEK_MODEL ?? null,
+        },
+      };
+    }
+
+    let requestStarted = false;
+    const providerFetch = this.env?.DEEPSEEK_FETCH ?? globalThis.fetch;
+    const guardedFetch = async (...args) => {
+      requestStarted = true;
+      if (typeof storage.put === "function") {
+        await storage.put(decisionKey, {
+          status: "pending",
+          residentId: resident.id,
+          simulatedAt: new Date(now).toISOString(),
+          requestedAt: new Date(wallClock).toISOString(),
+        });
+      }
+      return providerFetch(...args);
+    };
+    const plan = await planResidentDecision({ town, resident, now }, {
       env: this.env,
+      fetchImpl: guardedFetch,
       wallClock,
       bypassPeakPricing,
     });
+    if (requestStarted && typeof storage.put === "function") {
+      await storage.put(decisionKey, {
+        status: "complete",
+        residentId: resident.id,
+        simulatedAt: new Date(now).toISOString(),
+        completedAt: new Date(wallClock).toISOString(),
+        plan: clone(plan),
+      });
+    }
+    return plan;
   }
 
-  async alarm({ wallClock = new Date() } = {}) {
-    const state = await this.load();
+  async alarm(options = {}) {
+    const wallClock = options.wallClock ?? new Date();
+    const retryCount = Number.isSafeInteger(options.retryCount) ? options.retryCount : 0;
+    const isRetry = options.isRetry === true || retryCount > 0;
+    const state = await this.load({ scheduleAlarm: false });
+    const previousAttempt = typeof this.ctx.storage.get === "function"
+      ? await this.ctx.storage.get(ALARM_ATTEMPT_KEY)
+      : null;
+
+    if (isRetry && previousAttempt?.fromSimulatedAt && state.now !== previousAttempt.fromSimulatedAt) {
+      if (typeof this.ctx.storage.put === "function") {
+        await this.ctx.storage.put(ALARM_ATTEMPT_KEY, {
+          ...previousAttempt,
+          status: "complete",
+          recoveredOnRetry: true,
+        });
+      }
+      await this.ctx.storage.setAlarm(new Date(wallClock).getTime() + HEARTBEAT_INTERVAL_MS);
+      return { status: "already-advanced", from: previousAttempt.fromSimulatedAt, to: state.now };
+    }
+
+    if (typeof this.ctx.storage.put === "function") {
+      await this.ctx.storage.put(ALARM_ATTEMPT_KEY, {
+        status: "pending",
+        fromSimulatedAt: state.now,
+        startedAt: new Date(wallClock).toISOString(),
+        retryCount,
+      });
+    }
     const next = await advanceTown(state, {
       minutes: SIMULATION_STEP_MINUTES,
       decisionAdapter: (input) => this.decisionPlanFor(input, { wallClock }),
@@ -371,7 +451,25 @@ export class RookwoodTown {
     next.environment = this.environment;
     next.mode = modeFor(this.environment);
     next.persistence = "durable-object";
+    next.operations = {
+      ...(next.operations ?? {}),
+      catchUpPolicy: "pause-on-downtime",
+      lastHeartbeatAt: new Date(wallClock).toISOString(),
+      lastHeartbeatRetryCount: retryCount,
+      lastHeartbeatAdvancedFrom: state.now,
+      lastHeartbeatAdvancedTo: next.now,
+    };
     this.persist(next);
-    await this.ctx.storage.setAlarm(Date.now() + HEARTBEAT_INTERVAL_MS);
+    if (typeof this.ctx.storage.put === "function") {
+      await this.ctx.storage.put(ALARM_ATTEMPT_KEY, {
+        status: "complete",
+        fromSimulatedAt: state.now,
+        toSimulatedAt: next.now,
+        completedAt: new Date(wallClock).toISOString(),
+        retryCount,
+      });
+    }
+    await this.ctx.storage.setAlarm(new Date(wallClock).getTime() + HEARTBEAT_INTERVAL_MS);
+    return { status: "advanced", from: state.now, to: next.now };
   }
 }

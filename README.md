@@ -60,6 +60,8 @@ flowchart LR
 
 A planning turn produces a short ordered plan of at most five actions. The executor schedules those actions through the day and remains authoritative about what actually happens. Hard needs can interrupt an intention. A later planning turn can supersede unfinished work. Commitments can be fulfilled, delayed, missed, retried, and followed by authored downstream requests, but every loop has explicit cooldowns and caps.
 
+Resident turns span the whole simulated day. DeepSeek pricing windows apply only to the real request clock; the fictional town does not rearrange its lives around an API invoice.
+
 Four small civic chains now carry consequences across existing lives and places: clinic repair → school visit → hall record; flour → bread → inn account; dye bundle → loom repair → workshop parts; and route report → closing round. A fulfilled step schedules its follow-up, a delay retries later, and a broken promise ends that cycle before a cooldown. Sal's route report can overlap the clerk's notice, giving the bounded model experiment an actual competing commitment rather than a cost-free “be helpful” button.
 
 There is no hidden resident process and no model-managed clock.
@@ -86,6 +88,8 @@ DEEPSEEK_API_KEY=... npm run evaluate:model
 ```
 
 The staging Worker runs the same fixed 24-case evaluation once per configured revision from a server-side hourly trigger. The report is readable at `/api/evaluation`, but no public route can start, reset, or parameterize paid work.
+
+Before the first call, staging stores a durable `running` lease. Complete, failed, and interrupted/in-flight revisions are not retried automatically; a deliberate retry requires a new evaluation revision. The town's normal alarm path similarly guards model decisions by their exact simulated planning instant so a Worker retry cannot casually buy the same unknown response twice.
 
 The current milestone is simple: a fresh Calder Station should survive 90 simulated days and accumulate understandable causal differences instead of producing ninety copies of the same day.
 
@@ -137,6 +141,8 @@ Routine autonomous calls follow DeepSeek's published weekday peak windows using 
 Wrangler does not inherit Durable Object bindings into named environments, so production and staging each declare `TOWN` explicitly. The workflow validates that configuration before deployment and then smoke-tests the deployed `/api/health` and `/api/town` responses. A configured production or staging Worker without its expected binding returns HTTP 503 instead of quietly serving an ephemeral replay.
 
 A code commit does not automatically reset, publish, or redeploy the town.
+
+Persistent time follows a pause policy. One completed alarm advances one simulated hour; downtime does not produce a burst catch-up. Alarm retries detect an hour that already persisted, and `/api/health` reports the policy, last interval, retry count, persistence identity, environment, and model readiness.
 
 ## Repository map
 

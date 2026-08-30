@@ -131,26 +131,13 @@ function dateKey(value) {
   return startOfUtcDay(value).toISOString().slice(0, 10);
 }
 
-function dateAtOffset(windows, offsetMinutes) {
-  let remaining = offsetMinutes;
-
-  for (const window of windows) {
-    const durationMinutes = (window.end.getTime() - window.start.getTime()) / MINUTE_MS;
-    if (remaining < durationMinutes) {
-      return new Date(window.start.getTime() + remaining * MINUTE_MS);
-    }
-    remaining -= durationMinutes;
-  }
-
-  const lastWindow = windows[windows.length - 1];
-  return new Date(lastWindow.end.getTime() - MINUTE_MS);
-}
-
 /**
  * Build one routine decision slot per resident for a UTC day.
  * The result is deterministic for a given roster and day, but rotates by day.
+ * Provider pricing is deliberately absent: simulated lives use the whole
+ * fictional day, while modelCallPolicy governs the real request timestamp.
  */
-export function spreadDailyDecisionTimes({ day, residentIds, peakWindows } = {}) {
+export function spreadDailyDecisionTimes({ day, residentIds } = {}) {
   if (!Array.isArray(residentIds)) {
     throw new TypeError("residentIds must be an array");
   }
@@ -165,22 +152,19 @@ export function spreadDailyDecisionTimes({ day, residentIds, peakWindows } = {})
   if (ids.length === 0) return [];
 
   const sortedIds = [...ids].sort();
-  const windows = offPeakWindowsForDay(day, peakWindows);
-  const totalMinutes = windows.reduce(
-    (total, window) => total + (window.end.getTime() - window.start.getTime()) / MINUTE_MS,
-    0,
-  );
+  const dayStart = startOfUtcDay(day);
+  const totalMinutes = DAY_MS / MINUTE_MS;
   const rotation = stableHash(`${dateKey(day)}:${sortedIds.join("\u0000")}`) % sortedIds.length;
 
   return sortedIds.map((residentId, index) => {
     const slotIndex = (index + rotation) % sortedIds.length;
     const offsetMinutes = Math.floor(((slotIndex + 0.5) * totalMinutes) / sortedIds.length);
-    const requestedAt = dateAtOffset(windows, Math.min(offsetMinutes, totalMinutes - 1));
+    const requestedAt = new Date(dayStart.getTime() + Math.min(offsetMinutes, totalMinutes - 1) * MINUTE_MS);
 
     return {
       residentId,
       requestedAt,
-      scheduledAt: scheduleDecision({ requestedAt, priority: "routine", peakWindows }),
+      scheduledAt: requestedAt,
       priority: "routine",
     };
   });

@@ -296,6 +296,35 @@ test("deliberate evaluation can bypass peak pricing without changing simulated t
   assert.equal(result.modelTelemetry.fallback, true);
 });
 
+test("an interrupted model request falls back on retry instead of spending twice", async () => {
+  let calls = 0;
+  const { town, storage } = makeTown({
+    DEEPSEEK_API_KEY: "test-key",
+    DEEPSEEK_FETCH: async () => {
+      calls += 1;
+      throw new Error("must not repeat an outcome-unknown request");
+    },
+  });
+  const initial = createInitialTown();
+  const resident = initial.residents.find(({ id }) => id === "sal");
+  const now = new Date(resident.nextPlanAt);
+  await storage.put(`model-decision:sal:${now.toISOString()}`, {
+    status: "pending",
+    residentId: "sal",
+    simulatedAt: now.toISOString(),
+  });
+
+  const result = await town.decisionPlanFor(
+    { town: initial, resident, now },
+    { wallClock: new Date("2026-09-01T00:00:00.000Z") },
+  );
+
+  assert.equal(calls, 0);
+  assert.equal(result.source, "scripted");
+  assert.equal(result.modelTelemetry.fallback, true);
+  assert.equal(result.modelTelemetry.errorCode, "interrupted-request-guard");
+});
+
 test("staging uses a separate durable-object storage key and mode", async () => {
   const { town, storage } = makeTown({ TOWN_ENV: "staging" });
   const state = await (await town.fetch(new Request("https://town.internal/state"))).json();
@@ -342,6 +371,46 @@ test("alarms advance from the projection without loading the entire event log", 
   assert.equal(state.stats.tickCount, 1);
   assert.equal(events.events.length, 1);
   assert.equal(events.eventCount, state.stats.eventCount);
+});
+
+test("an alarm retry after persistence does not advance a second hour", async () => {
+  const { town } = makeTown();
+  await town.fetch(new Request("https://town.internal/state"));
+  const first = await town.alarm({ wallClock: new Date("2026-08-31T01:00:00.000Z") });
+  const retry = await town.alarm({
+    wallClock: new Date("2026-08-31T01:00:01.000Z"),
+    isRetry: true,
+    retryCount: 1,
+  });
+  const state = await (await town.fetch(new Request("https://town.internal/state"))).json();
+  const health = await (await town.fetch(new Request("https://town.internal/health"))).json();
+
+  assert.equal(first.status, "advanced");
+  assert.equal(retry.status, "already-advanced");
+  assert.equal(state.now, "2026-08-31T01:00:00.000Z");
+  assert.equal(state.stats.tickCount, 1);
+  assert.equal(health.clockPolicy, "pause-on-downtime");
+  assert.equal(health.simulationStepMinutes, 60);
+});
+
+test("a failing alarm leaves Cloudflare's current retry alarm untouched", async () => {
+  const { town, storage } = makeTown();
+  const initial = createInitialTown();
+  const sal = initial.residents.find(({ id }) => id === "sal");
+  sal.nextPlanAt = "2026-08-31T00:30:00.000Z";
+  sal.nextDecisionAt = sal.nextPlanAt;
+  town.persist(initial);
+  storage.alarmAt = null;
+  town.decisionPlanFor = async () => {
+    throw new Error("simulated handler crash");
+  };
+
+  await assert.rejects(
+    town.alarm({ wallClock: new Date("2026-08-31T00:00:00.000Z") }),
+    /simulated handler crash/,
+  );
+  assert.equal(storage.alarmAt, null);
+  assert.equal(JSON.parse(storage.sql.stateRow.state_json).now, initial.now);
 });
 
 test("the Worker delegates default API reads to the town object", async () => {

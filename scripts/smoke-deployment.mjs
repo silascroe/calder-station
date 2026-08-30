@@ -1,3 +1,5 @@
+import { MODEL_EVALUATION_REVISION } from "../src/model-evaluation.js";
+
 const RETRIES = 8;
 const RETRY_DELAY_MS = 2_500;
 
@@ -48,10 +50,12 @@ export async function smokeDeployment({ url, environment, object, requireModel =
       assertEqual(health.object, object, "health.object");
       assertEqual(town.environment, environment, "town.environment");
       assertEqual(town.persistence, "durable-object", "town.persistence");
+      assertEqual(health.clockPolicy, "pause-on-downtime", "health.clockPolicy");
+      assertEqual(health.simulationStepMinutes, 60, "health.simulationStepMinutes");
       if (!health.alarmAt) throw new Error("health.alarmAt was not scheduled");
       if (requireModel) {
         assertEqual(health.modelReady, true, "health.modelReady");
-        if (!health.evaluationRevision) throw new Error("health.evaluationRevision was not configured");
+        assertEqual(health.evaluationRevision, MODEL_EVALUATION_REVISION, "health.evaluationRevision");
       }
       return { health, town };
     } catch (error) {

@@ -94,7 +94,7 @@ export async function runScheduledModelEvaluation(env, { wallClock = new Date() 
   const currentResponse = await stub.fetch(new Request("https://town.internal/evaluation"));
   if (!currentResponse.ok) throw new Error(`Could not read model evaluation: HTTP ${currentResponse.status}`);
   const current = await currentResponse.json();
-  if (current.revision === revision && current.status === "complete") return current;
+  if (current.revision === revision && ["complete", "failed", "running"].includes(current.status)) return current;
 
   if (!env.DEEPSEEK_API_KEY) {
     const blocked = {
@@ -106,6 +106,13 @@ export async function runScheduledModelEvaluation(env, { wallClock = new Date() 
     await storeEvaluation(stub, blocked);
     return blocked;
   }
+
+  await storeEvaluation(stub, {
+    kind: "calder-station-model-evaluation",
+    revision,
+    status: "running",
+    startedAt: new Date(wallClock).toISOString(),
+  });
 
   let report;
   try {

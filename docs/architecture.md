@@ -34,6 +34,10 @@ If a queued action is no longer reasonable because of a hard need, deterministic
 
 One Durable Object coordinates the town projection, event log, and hourly alarm. Residents are ordinary records, not separate Durable Objects. The event log is append-only and the projection stores only a small recent event context; the full history remains queryable through SQLite.
 
+The production clock uses an explicit `pause-on-downtime` policy: one successful alarm advances exactly one simulated hour, and the next alarm is scheduled from completion. A long Worker outage therefore pauses Calder Station instead of triggering a model-call storm or silently fast-forwarding months. Health output exposes this policy, the last advanced interval, retry count, and next alarm.
+
+Alarm and model side effects have small durable leases. An alarm retry checks whether its intended starting projection already advanced before doing more work. Each eligible model planning instant stores a pending/completed decision record outside the projection; a completed response can be reused if town persistence was interrupted, while an outcome-unknown pending request falls back deterministically instead of spending twice. SQLite projection and event writes remain one synchronous transaction.
+
 Production and staging are separate Worker environments and use separate object names: production retains the existing `rookwood` storage key, while staging uses `rookwood-staging`. The public display name is stored as `Calder Station` in both. A one-time migration updates old stored event text to the canonical names; the frontend no longer performs runtime legacy-name substitution.
 
 The `TOWN` binding is declared separately in each Wrangler environment because Durable Object bindings are not inherited. Config validation runs before deployment, and a post-deploy smoke check requires the expected environment, Durable Object key, persistence mode, and alarm. At runtime, a configured environment missing `TOWN` returns HTTP 503; only an explicit preview request may use ephemeral state there.
@@ -67,9 +71,11 @@ The adapter is eligible only for the current Sal commitment experiment. It recei
 
 Provider pricing policy uses injected real wall-clock time. Calder Station's simulated date never determines whether a call is peak-priced. Routine autonomous calls are skipped during DeepSeek's published weekday 01:00–04:00 and 06:00–10:00 UTC peak windows; deliberate evaluation has an explicit bypass. Time injection keeps normal tests independent of the actual hour. As verified on 2026-08-30, `deepseek-v4-flash` is $0.22/M cache-miss input and $0.66/M output tokens off-peak, with peak rates twice those amounts.
 
+Resident planning slots span the entire simulated day. They never move to accommodate provider pricing; only the real request boundary applies the cost policy.
+
 `src/hybrid-planner.js` is the single scripted/model selection boundary used by both the persistent object and evaluation. The paid evaluation matrix creates fresh staging states, varies needs, distance, trust, and deadline pressure, then advances each through `advanceTown`. It records both model intent and the executed obligation outcome, which exposes cases where deterministic need interruption legitimately defeats a valid proposal.
 
-Staging has a fixed evaluation revision and a server-side Cron trigger. The trigger checks a report stored in the staging town object's SQLite-backed KV storage and runs the 24-case matrix only when that revision is incomplete. Production declares no evaluation trigger. The public staging API can read the report but cannot trigger, reset, or configure paid calls. Because Worker secrets are environment-specific, staging requires its own `DEEPSEEK_API_KEY`; post-deploy smoke verification requires `modelReady: true`.
+Staging has a fixed evaluation revision and a server-side Cron trigger. The trigger checks a report stored in the staging town object's SQLite-backed KV storage and runs the 24-case matrix once per revision. It stores `running` before the first provider call; `running`, `failed`, and `complete` are all non-retrying states, so a killed or failed evaluation cannot spend again every hour. Retrying deliberately requires a new revision. Production declares no evaluation trigger. The public staging API can read the report but cannot trigger, reset, or configure paid calls. Because Worker secrets are environment-specific, staging requires its own `DEEPSEEK_API_KEY`; post-deploy smoke verification requires `modelReady: true`.
 
 Routine mechanics remain scripted. More model-eligible incident classes should wait until the first one is easy to explain from the event history and long-horizon reports.
 
