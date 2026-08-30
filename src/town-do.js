@@ -11,7 +11,7 @@ import {
   reconcileTownWithSeed,
   townView,
 } from "./simulation.js";
-import { planResidentDecision } from "./hybrid-planner.js";
+import { modelConflictEligible, planResidentDecision } from "./hybrid-planner.js";
 import { scriptedObligationPlan } from "./obligations.js";
 
 // Keep the exported name and production key stable. Renaming the public town
@@ -387,6 +387,14 @@ export class RookwoodTown {
     wallClock = new Date(),
     bypassPeakPricing = false,
   } = {}) {
+    if (!modelConflictEligible(town, resident, now)) {
+      return planResidentDecision({ town, resident, now }, {
+        env: this.env,
+        fetchImpl: this.env?.DEEPSEEK_FETCH ?? globalThis.fetch,
+        wallClock,
+        bypassPeakPricing,
+      });
+    }
     const decisionKey = `${MODEL_DECISION_KEY_PREFIX}${resident.id}:${new Date(now).toISOString()}`;
     const storage = this.ctx.storage;
     const prior = typeof storage.get === "function" ? await storage.get(decisionKey) : null;

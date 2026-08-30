@@ -99,23 +99,75 @@ function competingObligations(state, resident, selectedId) {
       dueAt: obligation.dueAt,
       requiredAction: obligation.requiredAction ?? "deliver",
       destination: locationDetails(state, obligation.destinationId),
+      counterparty: counterpartyDetails(state, obligation),
     }));
 }
 
-function decisionObligations(state, resident, primary) {
+function decisionObligations(state, resident, primary, now) {
+  const nextPlanningAt = new Date(new Date(now).getTime() + 24 * 60 * 60 * 1000);
   const competing = (state.obligations ?? [])
     .filter((candidate) => (
       candidate.ownerId === resident.id
       && candidate.status === "open"
       && candidate.id !== primary.id
+      && new Date(candidate.dueAt) <= nextPlanningAt
     ))
     .sort((left, right) => String(left.dueAt).localeCompare(String(right.dueAt)) || left.id.localeCompare(right.id))
     .slice(0, 3);
   return [primary, ...competing];
 }
 
-function legalObligationChoices(state, resident, primary) {
-  const obligations = decisionObligations(state, resident, primary);
+function downstreamEffect(obligation) {
+  if (obligation.civicChainId) {
+    return "Fulfilling it lets the civic chain continue; breaking it ends this cycle and imposes a cooldown before the chain restarts.";
+  }
+  if (obligation.renewable) {
+    return "This is a recurring notice series; the outcome changes the relationship and the terms of the next notice.";
+  }
+  return "This is a bounded commitment with no automatic follow-up.";
+}
+
+function choiceConsequence(state, candidate, obligations, now) {
+  const relationship = relationshipBetween(state, candidate.ownerId, candidate.counterpartyId);
+  const dueInMinutes = Math.max(0, Math.round((new Date(candidate.dueAt) - new Date(now)) / 60_000));
+  const exposed = obligations
+    .filter(({ id }) => id !== candidate.id)
+    .map((other) => {
+      const otherRelationship = relationshipBetween(state, other.ownerId, other.counterpartyId);
+      return {
+        obligationId: other.id,
+        title: other.title,
+        dueAt: other.dueAt,
+        counterparty: counterpartyDetails(state, other),
+        ifMissed: {
+          strengthDelta: -6,
+          tensionDelta: 24,
+          downstream: downstreamEffect(other),
+        },
+        currentRelationship: {
+          strength: otherRelationship?.strength ?? null,
+          tension: otherRelationship?.tension ?? null,
+        },
+      };
+    });
+  return {
+    dueInMinutes,
+    counterparty: counterpartyDetails(state, candidate),
+    currentRelationship: {
+      strength: relationship?.strength ?? null,
+      tension: relationship?.tension ?? null,
+    },
+    ifFulfilled: {
+      strengthDelta: (relationship?.strength ?? 0) >= 90 ? 0 : (relationship?.strength ?? 0) >= 75 ? 1 : 2,
+      tensionDelta: -6,
+      downstream: downstreamEffect(candidate),
+    },
+    exposedCommitments: exposed,
+  };
+}
+
+function legalObligationChoices(state, resident, primary, now) {
+  const obligations = decisionObligations(state, resident, primary, now);
   return obligations.flatMap((candidate, index) => {
     const destination = locationDetails(state, candidate.destinationId);
     const common = {
@@ -128,9 +180,9 @@ function legalObligationChoices(state, resident, primary) {
     const fulfill = {
       ...common,
       choice: "fulfill",
-      effect: `Fulfill this commitment now; its relationship may strengthen. The other ${obligations.length - 1} open commitment${obligations.length === 2 ? "" : "s"} remain subject to their deadlines.`,
+      consequences: choiceConsequence(state, candidate, obligations, now),
     };
-    if (index > 0) return [fulfill];
+    if (obligations.length > 1 || index > 0) return [fulfill];
     return [
       fulfill,
       {
@@ -138,7 +190,11 @@ function legalObligationChoices(state, resident, primary) {
         choice: "report_delay",
         action: "observe",
         locationId: resident.locationId,
-        effect: "Mark the primary commitment delayed now; its relationship weakens, while every other open commitment remains subject to its deadline.",
+        consequences: {
+          currentRelationship: choiceConsequence(state, candidate, obligations, now).currentRelationship,
+          ifDelayed: { strengthDelta: -3, tensionDelta: 14 },
+          exposedCommitments: choiceConsequence(state, candidate, obligations, now).exposedCommitments,
+        },
       },
     ];
   });
@@ -189,7 +245,11 @@ export function buildDeepSeekContext({ state, resident, now, obligation } = {}) 
       requiredAction: obligation.requiredAction ?? "deliver",
     },
     competingObligations: competingObligations(state, resident, obligation.id),
-    legalChoices: legalObligationChoices(state, resident, obligation),
+    decisionWindow: {
+      nextPlanningAt: new Date(new Date(now).getTime() + 24 * 60 * 60 * 1000).toISOString(),
+      rule: "Only the selected commitment is acted on during this planning turn. Every unselected commitment remains open and may break before the next turn.",
+    },
+    legalChoices: legalObligationChoices(state, resident, obligation, now),
   };
 }
 
@@ -257,7 +317,7 @@ function parsedChoiceToDailyPlan(parsed, { state, resident, now, obligation }) {
   if (!selected || selected.status !== "open" || selected.ownerId !== resident.id) {
     throw fail("stale_obligation", "DeepSeek chose an obligation that is no longer available");
   }
-  const legalChoice = legalObligationChoices(state, resident, obligation).some((candidate) => (
+  const legalChoice = legalObligationChoices(state, resident, obligation, now).some((candidate) => (
     candidate.obligationId === parsed.obligationId && candidate.choice === parsed.choice
   ));
   if (!legalChoice) {

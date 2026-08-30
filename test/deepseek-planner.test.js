@@ -74,6 +74,10 @@ test("the DeepSeek adapter sends a bounded JSON decision request", async () => {
   assert.equal(body.messages[0].content.includes("Calder Station"), true);
   assert.equal(body.messages[1].content.includes("Sal D’Amico"), true);
   assert.equal(body.messages[1].content.includes("Rookwood"), false);
+  const context = JSON.parse(body.messages[1].content.split("\n").slice(1).join("\n"));
+  assert.match(context.decisionWindow.rule, /unselected commitment remains open/);
+  assert.equal(context.legalChoices[0].consequences.ifFulfilled.strengthDelta, 2);
+  assert.equal(context.legalChoices[0].consequences.ifFulfilled.tensionDelta, -6);
   assert.equal(plan.source, "model");
   assert.equal(plan.actions[0].action, "deliver");
   assert.ok(plan.actions.length > 1);

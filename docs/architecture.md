@@ -67,7 +67,7 @@ The seed, start time, authored rules, and deterministic adapter make a replay co
 
 ## Model policy
 
-The adapter is eligible only for the current Sal commitment experiment. It receives a compact authoritative state snapshot and recent events at Sal's actual planning instant, returns JSON with a small output budget, and has a typed timeout/provider/validation failure path. A fallback plan is selected by deterministic rules. Usage and fallback status become projection statistics and events.
+The adapter is eligible only for the current Sal commitment experiment, and only when two or more actionable commitments can expire before his next planning turn. One obvious commitment, impossible action under hard need, and routine life stay scripted. The model receives a compact authoritative snapshot at Sal's actual planning instant, including each offered deadline, current relationship strength and tension, exact deterministic relationship deltas, and bounded downstream civic effect. It returns JSON with a small output budget and has a typed timeout/provider/validation failure path. A fallback plan is selected by deterministic rules. Usage and fallback status become projection statistics and events.
 
 `advanceTown` and the scenario runner are asynchronous, but there is still one authoritative execution path. Deterministic adapters resolve immediately; paid adapters are awaited before validation and queueing. The engine therefore cannot prefetch intent from stale state while other residents, needs, expiries, or relationship changes are still pending before the planning turn.
 
@@ -75,7 +75,7 @@ Provider pricing policy uses injected real wall-clock time. Calder Station's sim
 
 Resident planning slots span the entire simulated day. They never move to accommodate provider pricing; only the real request boundary applies the cost policy.
 
-`src/hybrid-planner.js` is the single scripted/model selection boundary used by both the persistent object and evaluation. The paid evaluation matrix creates fresh staging states, varies needs, distance, trust, and deadline pressure, then advances each through `advanceTown`. It records both model intent and the executed obligation outcome, which exposes cases where deterministic need interruption legitimately defeats a valid proposal.
+`src/hybrid-planner.js` is the single scripted/model selection boundary used by both the persistent object and evaluation. The paid evaluation matrix creates fresh staging conflicts, varies relative deadlines, trust, tension, location, and fatigue, then advances each through `advanceTown` far enough for the selected commitment to resolve and the exposed one to expire. It records both model intent and deterministic consequences.
 
 Staging has a fixed evaluation revision and a server-side quarter-hour Cron trigger. The trigger checks a report stored in the staging town object's SQLite-backed KV storage and runs the 24-case matrix once per revision. It stores `running` before the first provider call; `running`, `failed`, and `complete` are all non-retrying states, so a killed or failed evaluation cannot spend again on later triggers. Retrying deliberately requires a new revision. Production declares no evaluation trigger. The public staging API can read the report but cannot trigger, reset, or configure paid calls. Because Worker secrets are environment-specific, staging requires its own `DEEPSEEK_API_KEY`; post-deploy smoke verification requires `modelReady: true`.
 

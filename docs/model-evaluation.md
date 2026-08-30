@@ -24,3 +24,7 @@ The provider integration is operational and cheap at this scale, but the experim
 The result is useful evidence rather than success: the offered problem did not expose enough concrete cost or downstream difference for model judgment to matter. A single open commitment should therefore remain scripted. Further paid evaluation should focus on mutually exclusive commitments, describe the deterministic consequences and next planning opportunity accurately, and compare a genuine multi-day model-assisted run with the scripted baseline.
 
 The complete per-case report, including request IDs and cache-token splits, is retained in GitHub Actions run `33329054907`.
+
+## Next revision
+
+`sal-consequential-conflict-v5-2026-08-30` removes paid calls for single commitments and hard-need cases. Its 24 cases all contain two commitments that will expire before the next planning turn. The prompt states concrete relationship deltas, current tension, deadlines, exposed work, and civic-chain effects; the scenario then runs long enough to observe one fulfillment and one broken commitment. Genuine results are pending the isolated staging deployment.

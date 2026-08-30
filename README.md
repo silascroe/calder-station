@@ -36,7 +36,7 @@ The authored world currently contains:
 - non-monotonic relationships with tension, repair, and diminishing gains
 - a read-only folio UI with a town register, map, resident pages, histories, and portraits
 
-Most decisions are still scripted on purpose. The current model experiment is deliberately narrow: **Sal D'Amico** can use DeepSeek when deciding what to do about an open commitment, including **Jamie Allen's notice** and a recurring route-report chain that can compete for his time. The model gets compact context and may return only an offered obligation ID, a legal choice, and a short note. If two commitments compete, choosing one leaves the other exposed to its actual deadline. Deterministic code composes the complete daily queue and owns all timing, movement, needs, and consequences. If the request times out, fails validation, or returns nonsense, scripted fallback rules take over.
+Most decisions are still scripted on purpose. The current model experiment is deliberately narrow: **Sal D'Amico** can use DeepSeek only when at least two actionable commitments can expire before his next planning turn. A single obvious commitment and a hard hunger/energy constraint remain ordinary code. The model gets compact context with deadlines, current relationship strength and tension, deterministic outcome deltas, and downstream civic effects; it may return only one offered obligation ID, `fulfill`, and a short note. Choosing one leaves the other exposed to its actual deadline. Deterministic code composes the complete daily queue and owns all timing, movement, needs, and consequences. If the request times out, fails validation, or returns nonsense, scripted fallback rules take over.
 
 This is still an experiment, not a finished artificial society. The current phase is about finding out whether a small world can remain coherent and interesting over long spans of simulated time before adding more people, more model calls, or more machinery.
 
@@ -83,7 +83,7 @@ Reports track event volume, resident plans and actions, relationship changes, co
 
 Normal CI and the default scenario command remain deterministic and make no paid calls. Deliberate model evaluation uses the same runner with an asynchronous DeepSeek adapter and an explicit pricing-policy bypass; it is never a browser-accessible mode.
 
-The checked-in evaluation matrix runs eight Sal obligation states three times each: baseline, a competing route report, tired, hungry, low/high trust, and near/distant deadlines. Every case passes through the real planner adapter, validator, queue, executor, and consequence rules. It records proposed choices, executed outcomes, validation fallbacks, request IDs, cache hit/miss tokens, and an estimated bill. With a local key:
+The checked-in evaluation matrix runs eight mutually exclusive Sal conflict states three times each. It varies which deadline comes first, which relationship is stronger or strained, and whether both commitments are urgent while Sal is tired and away from town. Every case passes through the real planner adapter, validator, queue, executor, expiry, and relationship consequences. It records the selected commitment, the fulfilled and broken outcomes, validation fallbacks, request IDs, cache hit/miss tokens, and an estimated bill. With a local key:
 
 ```sh
 DEEPSEEK_API_KEY=... npm run evaluate:model

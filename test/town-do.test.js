@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import worker from "../src/worker.js";
 import { createInitialTown } from "../src/simulation.js";
+import { materializeObligation } from "../src/obligations.js";
 import { RookwoodTown } from "../src/town-do.js";
 
 class Cursor {
@@ -68,6 +69,23 @@ class FakeContext {
 function makeTown(env = {}) {
   const storage = new FakeStorage();
   return { town: new RookwoodTown(new FakeContext(storage), env), storage };
+}
+
+function addSalConflict(state, at) {
+  const now = new Date(at);
+  state.obligations.push(materializeObligation({
+    id: "test-sal-route-report",
+    kind: "civic-request",
+    ownerId: "sal",
+    counterpartyId: "amos",
+    destinationId: "square",
+    requiredAction: "observe",
+    title: "Amos Foster's route report",
+    description: "The square needs checking before the closing round.",
+    dueAt: new Date(now.getTime() + 13 * 60 * 60 * 1000).toISOString(),
+    renewable: false,
+  }, now));
+  return state;
 }
 
 test("the town object initializes the current persistent Calder Station", async () => {
@@ -224,6 +242,7 @@ test("a due Sal decision uses one model plan and records its usage", async () =>
   });
   const initial = createInitialTown();
   initial.residents.find(({ id }) => id === "sal").nextDecisionAt = "2026-08-31T00:30:00.000Z";
+  addSalConflict(initial, "2026-08-31T00:30:00.000Z");
   town.persist(initial);
 
   await town.alarm({ wallClock: new Date("2026-08-31T00:00:00.000Z") });
@@ -255,6 +274,7 @@ test("a failed model request falls back without stopping the town", async () => 
   });
   const initial = createInitialTown();
   initial.residents.find(({ id }) => id === "sal").nextDecisionAt = "2026-08-31T00:30:00.000Z";
+  addSalConflict(initial, "2026-08-31T00:30:00.000Z");
   town.persist(initial);
 
   await town.alarm({ wallClock: new Date("2026-08-31T00:00:00.000Z") });
@@ -282,6 +302,7 @@ test("the model experiment defers its request during a provider peak window", as
   const initial = createInitialTown();
   const resident = initial.residents.find(({ id }) => id === "sal");
   const now = new Date(resident.nextPlanAt);
+  addSalConflict(initial, now);
 
   const result = await town.decisionPlanFor(
     { town: initial, resident, now },
@@ -306,6 +327,7 @@ test("deliberate evaluation can bypass peak pricing without changing simulated t
   const initial = createInitialTown();
   const resident = initial.residents.find(({ id }) => id === "sal");
   const now = new Date(resident.nextPlanAt);
+  addSalConflict(initial, now);
   const result = await town.decisionPlanFor(
     { town: initial, resident, now },
     { wallClock: new Date("2026-09-01T02:00:00.000Z"), bypassPeakPricing: true },
@@ -328,6 +350,7 @@ test("an interrupted model request falls back on retry instead of spending twice
   const initial = createInitialTown();
   const resident = initial.residents.find(({ id }) => id === "sal");
   const now = new Date(resident.nextPlanAt);
+  addSalConflict(initial, now);
   await storage.put(`model-decision:sal:${now.toISOString()}`, {
     status: "pending",
     residentId: "sal",

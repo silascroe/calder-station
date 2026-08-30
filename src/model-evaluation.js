@@ -6,7 +6,7 @@ import { advanceTown, createInitialTown } from "./simulation.js";
 
 const MINUTE_MS = 60 * 1000;
 
-export const MODEL_EVALUATION_REVISION = "sal-competing-choice-v4-2026-08-30";
+export const MODEL_EVALUATION_REVISION = "sal-consequential-conflict-v5-2026-08-30";
 export const MODEL_EVALUATION_REPETITIONS = 3;
 export const MODEL_EVALUATION_CONCURRENCY = 3;
 
@@ -17,14 +17,14 @@ export const DEEPSEEK_V4_FLASH_USD_PER_MILLION = Object.freeze({
 });
 
 const SCENARIOS = Object.freeze([
-  Object.freeze({ id: "baseline", energy: 72, hunger: 32, locationId: "square", relationship: 62, dueMinutes: 8 * 60 }),
-  Object.freeze({ id: "competing-route", energy: 72, hunger: 32, locationId: "square", relationship: 62, dueMinutes: 8 * 60, competingRoute: true }),
-  Object.freeze({ id: "tired-and-far", energy: 24, hunger: 32, locationId: "farm", relationship: 62, dueMinutes: 8 * 60 }),
-  Object.freeze({ id: "hungry-and-far", energy: 68, hunger: 94, locationId: "farm", relationship: 62, dueMinutes: 8 * 60 }),
-  Object.freeze({ id: "low-trust", energy: 72, hunger: 32, locationId: "square", relationship: 18, dueMinutes: 8 * 60 }),
-  Object.freeze({ id: "high-trust", energy: 72, hunger: 32, locationId: "square", relationship: 92, dueMinutes: 8 * 60 }),
-  Object.freeze({ id: "deadline-near", energy: 72, hunger: 32, locationId: "farm", relationship: 62, dueMinutes: 30 }),
-  Object.freeze({ id: "deadline-distant", energy: 72, hunger: 32, locationId: "farm", relationship: 62, dueMinutes: 24 * 60 }),
+  Object.freeze({ id: "balanced", energy: 72, hunger: 32, locationId: "square", noticeStrength: 62, routeStrength: 52, noticeTension: 0, routeTension: 0, noticeDueMinutes: 4 * 60, routeDueMinutes: 8 * 60 }),
+  Object.freeze({ id: "route-deadline", energy: 72, hunger: 32, locationId: "square", noticeStrength: 62, routeStrength: 52, noticeTension: 0, routeTension: 0, noticeDueMinutes: 8 * 60, routeDueMinutes: 2 * 60 }),
+  Object.freeze({ id: "notice-deadline", energy: 72, hunger: 32, locationId: "square", noticeStrength: 62, routeStrength: 52, noticeTension: 0, routeTension: 0, noticeDueMinutes: 2 * 60, routeDueMinutes: 8 * 60 }),
+  Object.freeze({ id: "route-trust", energy: 72, hunger: 32, locationId: "square", noticeStrength: 24, routeStrength: 88, noticeTension: 0, routeTension: 0, noticeDueMinutes: 4 * 60, routeDueMinutes: 8 * 60 }),
+  Object.freeze({ id: "notice-trust", energy: 72, hunger: 32, locationId: "square", noticeStrength: 88, routeStrength: 24, noticeTension: 0, routeTension: 0, noticeDueMinutes: 8 * 60, routeDueMinutes: 4 * 60 }),
+  Object.freeze({ id: "route-strained", energy: 72, hunger: 32, locationId: "square", noticeStrength: 62, routeStrength: 46, noticeTension: 0, routeTension: 30, noticeDueMinutes: 4 * 60, routeDueMinutes: 8 * 60 }),
+  Object.freeze({ id: "notice-strained", energy: 72, hunger: 32, locationId: "square", noticeStrength: 46, routeStrength: 62, noticeTension: 30, routeTension: 0, noticeDueMinutes: 8 * 60, routeDueMinutes: 4 * 60 }),
+  Object.freeze({ id: "both-urgent", energy: 24, hunger: 70, locationId: "farm", noticeStrength: 62, routeStrength: 62, noticeTension: 8, routeTension: 8, noticeDueMinutes: 30, routeDueMinutes: 45 }),
 ]);
 
 function relationshipBetween(state, firstId, secondId) {
@@ -38,6 +38,7 @@ function prepareCase(scenario, repetition) {
   const state = createInitialTown({
     seed: `model-evaluation:${scenario.id}:${repetition}`,
     environment: "staging",
+    startTime: "2026-08-31T03:00:00.000Z",
   });
   state.mode = "staging-model-evaluation";
   state.persistence = "evaluation-memory";
@@ -64,22 +65,26 @@ function prepareCase(scenario, repetition) {
   sal.y = location.y;
   sal.nextPlanAt = planAt.toISOString();
   sal.nextDecisionAt = sal.nextPlanAt;
-  obligation.dueAt = new Date(now.getTime() + scenario.dueMinutes * MINUTE_MS).toISOString();
-  relationship.strength = scenario.relationship;
-  if (scenario.competingRoute) {
-    state.obligations.push(materializeObligation({
-      id: "evaluation-route-report",
-      kind: "civic-request",
-      ownerId: "sal",
-      counterpartyId: "amos",
-      destinationId: "square",
-      requiredAction: "observe",
-      title: "Amos Foster's route report",
-      description: "Amos needs the square checked before Sal commits to the clerk's detour.",
-      dueAfterMinutes: 12 * 60,
-      renewable: false,
-    }, now));
-  }
+  obligation.dueAt = new Date(planAt.getTime() + scenario.noticeDueMinutes * MINUTE_MS).toISOString();
+  relationship.strength = scenario.noticeStrength;
+  relationship.tension = scenario.noticeTension;
+  const routeRelationship = relationshipBetween(state, "sal", "amos");
+  routeRelationship.strength = scenario.routeStrength;
+  routeRelationship.tension = scenario.routeTension;
+  state.obligations.push(materializeObligation({
+    id: "evaluation-route-report",
+    kind: "civic-request",
+    ownerId: "sal",
+    counterpartyId: "amos",
+    destinationId: "square",
+    requiredAction: "observe",
+    title: "Amos Foster's route report",
+    description: "Amos needs the square checked so the closing-round request can proceed.",
+    dueAfterMinutes: scenario.routeDueMinutes,
+    dueAt: new Date(planAt.getTime() + scenario.routeDueMinutes * MINUTE_MS).toISOString(),
+    renewable: false,
+    civicChainId: "night-route",
+  }, planAt));
 
   return { state, planAt, salId: sal.id, obligationId: obligation.id };
 }
@@ -109,7 +114,7 @@ export function estimateDeepSeekCost(telemetry, wallClock) {
 async function evaluateCase({ scenario, repetition, env, fetchImpl, wallClock }) {
   const prepared = prepareCase(scenario, repetition);
   const final = await advanceTown(prepared.state, {
-    minutes: 5,
+    minutes: 21 * 60,
     decisionAdapter: (input) => planResidentDecision(input, {
       env,
       fetchImpl,
@@ -131,9 +136,12 @@ async function evaluateCase({ scenario, repetition, env, fetchImpl, wallClock })
       energy: scenario.energy,
       hunger: scenario.hunger,
       locationId: scenario.locationId,
-      relationship: scenario.relationship,
-      dueMinutes: scenario.dueMinutes,
-      competingRoute: scenario.competingRoute === true,
+      noticeStrength: scenario.noticeStrength,
+      routeStrength: scenario.routeStrength,
+      noticeTension: scenario.noticeTension,
+      routeTension: scenario.routeTension,
+      noticeDueMinutes: scenario.noticeDueMinutes,
+      routeDueMinutes: scenario.routeDueMinutes,
     },
     source: sal.dailyPlan?.source ?? null,
     selectedObligationId,

@@ -10,14 +10,11 @@ import {
 function modelResponse(body, index) {
   const prompt = body.messages.at(-1).content;
   const context = JSON.parse(prompt.slice(prompt.indexOf("\n") + 1));
-  const delay = context.resident.energy < 30 || context.resident.hunger >= 94;
-  const choice = delay ? "report_delay" : "fulfill";
-  const competingChoice = context.legalChoices.find((candidate) => (
-    candidate.obligationId !== context.obligation.id && candidate.choice === "fulfill"
-  ));
-  const obligationId = context.competingObligations.length > 0 && !delay
-    ? competingChoice.obligationId
-    : context.obligation.id;
+  const selected = [...context.legalChoices].sort((left, right) => (
+    (right.consequences.currentRelationship.strength ?? 0)
+      - (left.consequences.currentRelationship.strength ?? 0)
+    || left.consequences.dueInMinutes - right.consequences.dueInMinutes
+  ))[0];
   return {
     id: `chatcmpl-evaluation-${index}`,
     model: "deepseek-v4-flash",
@@ -25,9 +22,9 @@ function modelResponse(body, index) {
       finish_reason: "stop",
       message: {
         content: JSON.stringify({
-          obligationId,
-          choice,
-          note: delay ? "The route would unravel." : "The route remains possible.",
+          obligationId: selected.obligationId,
+          choice: selected.choice,
+          note: "This commitment has the stronger immediate claim.",
         }),
       },
     }],
@@ -59,17 +56,22 @@ test("paid evaluation exercises varied cases through the authoritative engine", 
   assert.equal(report.calls, 8);
   assert.equal(report.successfulModelPlans, 8);
   assert.equal(report.fallbackCount, 0);
-  assert.deepEqual(report.choices, { fulfill: 6, report_delay: 2 });
+  assert.deepEqual(report.choices, { fulfill: 8 });
   assert.equal(report.promptTokens, 4_000);
   assert.equal(report.completionTokens, 560);
   assert.ok(report.estimatedCostUsd > 0);
-  assert.ok(report.cases.some(({ executedOutcome }) => executedOutcome === "delayed"));
-  assert.ok(report.cases.some(({ conditions }) => conditions.competingRoute));
-  const competing = report.cases.find(({ conditions }) => conditions.competingRoute);
+  assert.ok(report.cases.every(({ competingObligationCount }) => competingObligationCount === 2));
+  assert.ok(report.cases.some(({ selectedObligationId }) => selectedObligationId === "evaluation-route-report"));
+  assert.ok(report.cases.some(({ selectedObligationId }) => selectedObligationId === "obligation-sal-vey-notice"));
+  const competing = report.cases.find(({ selectedObligationId }) => selectedObligationId === "evaluation-route-report");
   assert.equal(competing.competingObligationCount, 2);
   assert.equal(competing.selectedObligationId, "evaluation-route-report");
   assert.equal(competing.executedOutcome, "fulfilled");
-  assert.equal(competing.primaryOutcome, "open");
+  assert.equal(competing.primaryOutcome, "broken");
+  assert.ok(report.cases.every(({ primaryOutcome, competingOutcome }) => (
+    [primaryOutcome, competingOutcome].filter((status) => status === "fulfilled").length === 1
+    && [primaryOutcome, competingOutcome].filter((status) => status === "broken").length === 1
+  )));
   assert.ok(report.cases.every(({ source }) => source === "model"));
 });
 
