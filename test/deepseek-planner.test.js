@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createInitialTown } from "../src/simulation.js";
+import { materializeObligation } from "../src/obligations.js";
 import {
   createDeepSeekPlan,
   DeepSeekPlannerError,
@@ -107,6 +108,35 @@ test("the model may choose an outcome but may not author world actions", async (
     }),
     (error) => error.code === "stale_obligation",
   );
+});
+
+test("the bounded model choice can select a real competing commitment", async () => {
+  const input = modelInput();
+  input.state.obligations.push(materializeObligation({
+    id: "competing-route-report",
+    kind: "civic-request",
+    ownerId: "sal",
+    counterpartyId: "amos",
+    destinationId: "square",
+    requiredAction: "observe",
+    title: "Amos Foster's route report",
+    description: "The square needs checking before the clerk's detour.",
+    dueAfterMinutes: 12 * 60,
+  }, input.now));
+  const plan = await createDeepSeekPlan({
+    ...input,
+    env,
+    fetchImpl: async () => new Response(JSON.stringify(payload(JSON.stringify({
+      obligationId: "competing-route-report",
+      choice: "fulfill",
+      note: "The route report cannot wait for tomorrow.",
+    })))),
+  });
+
+  assert.equal(plan.obligationDecision.obligationId, "competing-route-report");
+  assert.equal(plan.actions[0].action, "observe");
+  assert.equal(plan.actions[0].locationId, "square");
+  assert.ok(plan.actions.some(({ action }) => action === "rest"));
 });
 
 test("provider errors become typed failures for the deterministic fallback", async () => {

@@ -12,6 +12,12 @@ function modelResponse(body, index) {
   const context = JSON.parse(prompt.slice(prompt.indexOf("\n") + 1));
   const delay = context.resident.energy < 30 || context.resident.hunger >= 94;
   const choice = delay ? "report_delay" : "fulfill";
+  const competingChoice = context.legalChoices.find((candidate) => (
+    candidate.obligationId !== context.obligation.id && candidate.choice === "fulfill"
+  ));
+  const obligationId = context.competingObligations.length > 0 && !delay
+    ? competingChoice.obligationId
+    : context.obligation.id;
   return {
     id: `chatcmpl-evaluation-${index}`,
     model: "deepseek-v4-flash",
@@ -19,7 +25,7 @@ function modelResponse(body, index) {
       finish_reason: "stop",
       message: {
         content: JSON.stringify({
-          obligationId: context.obligation.id,
+          obligationId,
           choice,
           note: delay ? "The route would unravel." : "The route remains possible.",
         }),
@@ -59,10 +65,11 @@ test("paid evaluation exercises varied cases through the authoritative engine", 
   assert.ok(report.estimatedCostUsd > 0);
   assert.ok(report.cases.some(({ executedOutcome }) => executedOutcome === "delayed"));
   assert.ok(report.cases.some(({ conditions }) => conditions.competingRoute));
-  assert.equal(
-    report.cases.find(({ conditions }) => conditions.competingRoute).competingObligationCount,
-    2,
-  );
+  const competing = report.cases.find(({ conditions }) => conditions.competingRoute);
+  assert.equal(competing.competingObligationCount, 2);
+  assert.equal(competing.selectedObligationId, "evaluation-route-report");
+  assert.equal(competing.executedOutcome, "fulfilled");
+  assert.equal(competing.primaryOutcome, "open");
   assert.ok(report.cases.every(({ source }) => source === "model"));
 });
 

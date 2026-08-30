@@ -6,7 +6,7 @@ import { advanceTown, createInitialTown } from "./simulation.js";
 
 const MINUTE_MS = 60 * 1000;
 
-export const MODEL_EVALUATION_REVISION = "sal-choice-only-v3-2026-08-30";
+export const MODEL_EVALUATION_REVISION = "sal-competing-choice-v4-2026-08-30";
 export const MODEL_EVALUATION_REPETITIONS = 3;
 export const MODEL_EVALUATION_CONCURRENCY = 3;
 
@@ -118,7 +118,10 @@ async function evaluateCase({ scenario, repetition, env, fetchImpl, wallClock })
     }),
   });
   const sal = final.residents.find(({ id }) => id === prepared.salId);
-  const obligation = final.obligations.find(({ id }) => id === prepared.obligationId);
+  const primaryObligation = final.obligations.find(({ id }) => id === prepared.obligationId);
+  const selectedObligationId = sal.dailyPlan?.obligationDecision?.obligationId ?? null;
+  const selectedObligation = final.obligations.find(({ id }) => id === selectedObligationId);
+  const competing = final.obligations.find(({ id }) => id === "evaluation-route-report");
   const model = sal.dailyPlan?.model ?? {};
   return {
     id: `${scenario.id}-${repetition}`,
@@ -133,10 +136,13 @@ async function evaluateCase({ scenario, repetition, env, fetchImpl, wallClock })
       competingRoute: scenario.competingRoute === true,
     },
     source: sal.dailyPlan?.source ?? null,
+    selectedObligationId,
     choice: sal.dailyPlan?.obligationDecision?.choice ?? null,
     reason: sal.dailyPlan?.reason ?? null,
     note: sal.dailyPlan?.obligationDecision?.note ?? null,
-    executedOutcome: obligation.status,
+    executedOutcome: selectedObligation?.status ?? null,
+    primaryOutcome: primaryObligation.status,
+    competingOutcome: competing?.status ?? null,
     competingObligationCount: sal.dailyPlan?.competingObligationCount ?? 0,
     fallback: Boolean(model.fallback),
     errorCode: model.errorCode ?? null,
