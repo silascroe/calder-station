@@ -1,6 +1,9 @@
 name: Deploy Town Dashboard
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       environment:
@@ -14,6 +17,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: town-deploy-${{ github.event_name == 'push' && 'staging' || inputs.environment }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -30,7 +37,7 @@ jobs:
         run: npm test
 
   deploy-staging:
-    if: ${{ inputs.environment == 'staging' }}
+    if: ${{ github.event_name == 'push' || inputs.environment == 'staging' }}
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -53,7 +60,7 @@ jobs:
         run: npm run smoke:deploy -- --url "$DEPLOYMENT_URL" --environment staging --object rookwood-staging --require-model
 
   deploy-production:
-    if: ${{ inputs.environment == 'production' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.environment == 'production' }}
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 15

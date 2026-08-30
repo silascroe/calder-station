@@ -7,6 +7,7 @@ import { MODEL_EVALUATION_REVISION } from "../src/model-evaluation.js";
 import worker from "../src/worker.js";
 
 const config = JSON.parse(fs.readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
+const workflow = fs.readFileSync(new URL("../.github/workflows/deploy.yml", import.meta.url), "utf8");
 
 test("production and staging declare isolated persistent bindings", () => {
   const result = validateDeployConfig(config);
@@ -15,6 +16,13 @@ test("production and staging declare isolated persistent bindings", () => {
   assert.equal(result.durableObjectClass, "RookwoodTown");
   assert.equal(config.env.staging.triggers.crons.length, 1);
   assert.equal(config.env.staging.vars.MODEL_EVALUATION_REVISION, MODEL_EVALUATION_REVISION);
+});
+
+test("main deploys isolated staging automatically while production stays manual", () => {
+  assert.match(workflow, /push:\s+branches:\s+- main/);
+  assert.match(workflow, /deploy-staging:[\s\S]*github\.event_name == 'push'/);
+  assert.match(workflow, /deploy-production:[\s\S]*github\.event_name == 'workflow_dispatch'[\s\S]*inputs\.environment == 'production'/);
+  assert.match(workflow, /deploy --env staging/);
 });
 
 test("a configured environment cannot masquerade as an ephemeral town without TOWN", async () => {

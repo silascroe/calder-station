@@ -129,10 +129,10 @@ That currently means one SQLite-backed Cloudflare Durable Object coordinator. No
 
 ## Production and staging
 
-Deployment is intentionally manual through GitHub Actions.
+Deployment deliberately treats the two environments differently:
 
-- `production` deploys `town-dashboard` and preserves the persistent town.
-- `staging` deploys `town-dashboard-staging` with isolated disposable state.
+- every commit to `main` runs tests and deploys `town-dashboard-staging` with isolated disposable state;
+- `production` deploys `town-dashboard` only through an explicit GitHub Actions dispatch and preserves the canonical persistent town.
 
 Both environments use `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. `DEEPSEEK_API_KEY` is stored as a Cloudflare Worker secret only in environments that should make model calls; it is never sent to the browser.
 
@@ -142,7 +142,7 @@ Routine autonomous calls follow DeepSeek's published weekday peak windows using 
 
 Wrangler does not inherit Durable Object bindings into named environments, so production and staging each declare `TOWN` explicitly. The workflow validates that configuration before deployment and then smoke-tests the deployed `/api/health` and `/api/town` responses. A configured production or staging Worker without its expected binding returns HTTP 503 instead of quietly serving an ephemeral replay.
 
-A code commit does not automatically reset, publish, or redeploy the town.
+A code commit never resets or redeploys production. It does automatically refresh staging after the test gate so disposable infrastructure and paid-evaluation revisions can be verified promptly.
 
 Persistent time follows a pause policy. One completed alarm advances one simulated hour; downtime does not produce a burst catch-up. Alarm retries detect an hour that already persisted. A caught failure records a health-visible fault and schedules a fresh attempt one hour later rather than exhausting Cloudflare's finite retry budget. `/api/health` reports the policy, last interval, retry/failure state, persistence identity, environment, and model readiness.
 
