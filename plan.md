@@ -23,7 +23,7 @@ Success means a fresh staging Calder Station can run for 90 simulated days, prod
 - The simulation and long-horizon runner now share an asynchronous planner boundary. Model intent is requested at the exact authoritative planning instant rather than prefetched from state at the beginning of an hourly alarm. Deterministic CI remains no-cost; deliberate paid staging evaluation is the next evidence layer.
 - Current DeepSeek documentation lists weekday peak windows at 01:00–04:00 and 06:00–10:00 UTC, with off-peak pricing at half the peak rate. Scheduled production calls should retain that policy; deliberate evaluation needs an explicit bypass.
 - A fixed 24-case paid evaluation matrix now uses the same authoritative planner, validator, queue, and executor as the town. It varies needs, location, trust, and deadline pressure, records intent versus executed outcome, and estimates cost from cache-aware token usage. Staging runs each revision once from a server-side schedule; no public route can initiate paid work.
-- This workspace has no local DeepSeek or Cloudflare credential. The operator reports that the staging Worker now has its own DeepSeek secret; genuine results remain pending until the corrected staging build is deployed and its server-side evaluation runs. No paid calls have been made in this pass yet.
+- The corrected persistent staging Worker completed 24 genuine `deepseek-v4-flash` calls: 24 valid plans, zero fallbacks, 22,038 prompt tokens, 1,120 completion tokens, and about $0.004197 estimated spend. DeepSeek chose fulfillment in all 24 cases, including exhausted, hungry, low-trust, distant-deadline, and competing-route states; three hungry selections were then interrupted and remained open. The provider boundary works, but the decision problem is still theater.
 - DeepSeek's authority is now choice-only: `{obligationId, choice, note}`. It may choose among bounded open commitments when they genuinely compete, while deterministic code composes Sal's full legal day and leaves unattended commitments subject to their deadlines.
 - Persistent history now orders by durable insertion rather than lexical IDs and repairs a stale projection event sequence from SQLite, covering the first concrete year-scale log defect found in the operations audit.
 - `main` now automatically deploys disposable staging after the test gate; production remains manual. This removes the recurring evaluation bottleneck without allowing code pushes to touch canonical production state.
@@ -41,9 +41,9 @@ The action queue is intentionally finite: each plan has at most five actions, ea
 
 ## Next useful work
 
-1. Redeploy staging with its configured DeepSeek secret, verify persistent mode, and collect the fixed genuine evaluation report without touching production state.
-2. Use genuine evaluation results to decide whether the Sal conflict earns model calls or needs stronger pressure.
-3. Use the Folio and model report together to decide whether the next phase should deepen durable relationship memory or introduce a second model-worthy conflict class.
+1. Stop spending model calls on a single obvious commitment; reserve them for genuinely competing legal commitments.
+2. Expose the deterministic deadline, relationship, and downstream consequences of each offered choice, then repeat the paid matrix against conflict states.
+3. Run a bounded genuine model-assisted multi-day scenario through the same engine and compare its causal history with the scripted baseline.
 
 ## Deferred
 

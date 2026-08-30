@@ -95,6 +95,8 @@ Before the first call, staging stores a durable `running` lease. Complete, faile
 
 After a staging deployment, GitHub Actions waits for that revision's terminal report. A blocked, failed, malformed, or timed-out evaluation fails the staging run; a successful 24-case report and its cost summary remain in the deployment log for later review.
 
+The first genuine evaluation was technically clean but behaviorally uniform: 24/24 valid responses chose fulfillment, including cases where hunger prevented execution. The measured result and resulting design decision are recorded in [`docs/model-evaluation.md`](docs/model-evaluation.md).
+
 The current milestone is simple: a fresh Calder Station should survive 90 simulated days and accumulate understandable causal differences instead of producing ninety copies of the same day.
 
 ## Run it locally
@@ -166,6 +168,7 @@ Persistent time follows a pause policy. One completed alarm advances one simulat
 | `public/` | Folio UI, map, resident register, and portrait assets |
 | `test/` | unit, integration, migration, replay, runner, and frontend tests |
 | `docs/architecture.md` | deeper architecture notes and system boundaries |
+| `docs/model-evaluation.md` | paid provider evidence and conclusions |
 | `plan.md` | current milestone, sequencing, and deliberately deferred work |
 
 ## Philosophy
