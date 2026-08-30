@@ -10,6 +10,14 @@ const store = {
   selectedResidentId: "mara",
 };
 
+const CONSEQUENTIAL_EVENT_TYPES = new Set([
+  "obligation",
+  "obligation-created",
+  "encounter",
+  "action-interrupted",
+  "model-fallback",
+]);
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -90,18 +98,70 @@ function eventText(event) {
   return event.text;
 }
 
+function isConsequentialEvent(event) {
+  return CONSEQUENTIAL_EVENT_TYPES.has(event?.type);
+}
+
+function eventStamp(event) {
+  if (!event?.at || !store.town?.startedAt) return event?.time ?? "—";
+  const elapsed = new Date(event.at).getTime() - new Date(store.town.startedAt).getTime();
+  const day = Math.max(1, Math.floor(elapsed / (24 * 60 * 60 * 1000)) + 1);
+  return `D${day} · ${event.time ?? event.at.slice(11, 16)}`;
+}
+
+function eventKind(event) {
+  return {
+    "obligation-created": "new commitment",
+    obligation: "commitment",
+    encounter: "encounter",
+    "action-interrupted": "interruption",
+    "model-fallback": "fallback",
+  }[event?.type] ?? "ordinary record";
+}
+
 function eventRow(event, { paper = false } = {}) {
   const actorName = eventActor(event);
   const actor = event.actorId
     ? routeLink(`/residents/${event.actorId}`, escapeHtml(actorName))
     : escapeHtml(actorName);
   const paperClass = paper ? " journal-event-paper" : "";
+  const consequentialClass = isConsequentialEvent(event) ? " consequential-event" : "";
   return `
-    <li class="event-row${paperClass}">
-      <span class="event-time">${escapeHtml(event.time ?? "—")}</span>
+    <li class="event-row${paperClass}${consequentialClass}">
+      <span class="event-time">${escapeHtml(eventStamp(event))}</span>
       <span class="event-marker event-marker-${escapeHtml(event.type ?? "system")}"></span>
-      <p><strong>${actor}</strong> ${escapeHtml(eventText(event))}</p>
+      <p><small class="event-kind">${escapeHtml(eventKind(event))}</small><strong>${actor}</strong> ${escapeHtml(eventText(event))}</p>
     </li>
+  `;
+}
+
+function openObligationsFor(residentId) {
+  return (store.town?.obligations ?? [])
+    .filter((obligation) => obligation.status === "open" && obligation.ownerId === residentId)
+    .sort((left, right) => String(left.dueAt).localeCompare(String(right.dueAt)));
+}
+
+function obligationDueLabel(obligation) {
+  const due = new Date(obligation.dueAt);
+  const now = new Date(store.town?.now);
+  if (Number.isNaN(due.getTime()) || Number.isNaN(now.getTime())) return "due time unrecorded";
+  const hours = Math.ceil((due.getTime() - now.getTime()) / (60 * 60 * 1000));
+  if (hours <= 0) return "due now";
+  if (hours < 24) return `due in ${hours}h`;
+  return `due in ${Math.ceil(hours / 24)}d`;
+}
+
+function obligationRow(obligation) {
+  const owner = residentById(obligation.ownerId);
+  const counterparty = residentById(obligation.counterpartyId);
+  const place = locationById(obligation.destinationId);
+  return `
+    <article class="commitment-row">
+      <p>${owner ? routeLink(`/residents/${owner.id}`, escapeHtml(owner.name)) : escapeHtml(obligation.ownerId)} <span>owes</span> ${counterparty ? routeLink(`/residents/${counterparty.id}`, escapeHtml(counterparty.name)) : escapeHtml(obligation.counterpartyId)}</p>
+      <strong>${escapeHtml(obligation.title)}</strong>
+      <small>${escapeHtml(actionLabel(obligation.requiredAction))} · ${escapeHtml(place?.name ?? obligation.destinationId)} · ${escapeHtml(obligationDueLabel(obligation))}</small>
+      ${obligation.parentObligationId ? "<em>Continues an earlier promise</em>" : ""}
+    </article>
   `;
 }
 
@@ -151,7 +211,9 @@ function renderOverview() {
     .map((location) => ({ location, residents: residentsAt(location.id) }))
     .filter(({ residents }) => residents.length)
     .sort((left, right) => right.residents.length - left.residents.length);
-  const latest = events.find((event) => event.type !== "system") ?? events[0];
+  const consequentialEvents = events.filter(isConsequentialEvent);
+  const ordinaryEvents = events.filter((event) => event.type !== "system" && !isConsequentialEvent(event));
+  const latest = consequentialEvents[0] ?? events.find((event) => event.type !== "system") ?? events[0];
   const latestSentence = latest
     ? `${eventActor(latest)} ${eventText(latest)}.`
     : "The town is quiet enough to hear itself continuing.";
@@ -185,7 +247,7 @@ function renderOverview() {
 
     <section class="town-note-strip">
       <p class="eyebrow">Town note</p>
-      <p class="town-note-copy">Nothing historic has to happen for the town to acquire a history.</p>
+      <p class="town-note-copy">${latest ? `${escapeHtml(eventActor(latest))} ${escapeHtml(eventText(latest))}.` : "Nothing historic has to happen for the town to acquire a history."}</p>
       <div class="town-note-tags">
         <span>${town.residents.length} people</span>
         <span>${town.locations.length} places</span>
@@ -197,27 +259,21 @@ function renderOverview() {
       <article class="journal-sheet">
         <header class="folio-section-heading">
           <span class="section-index">I</span>
-          <div><p class="eyebrow">Town journal</p><h2>The day, as it happened</h2></div>
-          <span class="section-code">Newest first</span>
+          <div><p class="eyebrow">Town journal</p><h2>What may endure</h2></div>
+          <span class="section-code">Causal record</span>
         </header>
-        <ol class="event-feed paper-feed">${events.slice(0, 7).map((event) => eventRow(event, { paper: true })).join("")}</ol>
-        <p class="journal-motto">Small moments first. Systems second.</p>
+        <ol class="event-feed paper-feed">${consequentialEvents.slice(0, 5).map((event) => eventRow(event, { paper: true })).join("") || "<li class=\"paper-empty\">No consequential entries yet.</li>"}</ol>
+        ${ordinaryEvents.length ? `<div class="ordinary-journal"><p class="paper-label">Latest ordinary entries</p><ol class="event-feed">${ordinaryEvents.slice(0, 3).map((event) => eventRow(event, { paper: true })).join("")}</ol></div>` : ""}
+        <p class="journal-motto">Routine keeps the town alive. Consequences give it a history.</p>
       </article>
 
-      <aside class="place-ledger">
+      <aside class="place-ledger commitment-ledger">
         <header class="folio-section-heading compact-heading">
           <span class="section-index">II</span>
-          <div><p class="eyebrow">Places</p><h2>Where they are</h2></div>
+          <div><p class="eyebrow">Commitments</p><h2>What is owed</h2></div>
         </header>
-        <div class="place-ledger-list">
-          ${occupied.slice(0, 6).map(({ location, residents }) => `
-            <button type="button" class="place-ledger-row" data-go-map="${escapeHtml(location.id)}">
-              <span><strong>${escapeHtml(location.name)}</strong><small>${escapeHtml(location.type)}</small></span>
-              <b>${residents.length}</b>
-            </button>
-          `).join("")}
-        </div>
-        <p class="ledger-foot">${occupied.length} of ${town.locations.length} places occupied</p>
+        <div class="commitment-list">${openObligations.slice(0, 5).map(obligationRow).join("") || "<p class=\"paper-empty\">No promises are presently due.</p>"}</div>
+        <p class="ledger-foot">${openObligations.length} open · ${occupied.length} places occupied · ${routeLink("/map", "open map ↗")}</p>
       </aside>
 
       <aside class="people-ledger">
@@ -366,7 +422,7 @@ function planSummary(resident) {
   const socialTarget = resident.dailyPlan.socialIntentions?.[0]?.targetId
     ? residentById(resident.dailyPlan.socialIntentions[0].targetId)
     : null;
-  const obligation = (store.town?.obligations ?? []).find(({ ownerId }) => ownerId === resident.id);
+  const obligation = openObligationsFor(resident.id)[0];
   const modelStatus = resident.dailyPlan?.model?.fallback
     ? "Scripted fallback used"
     : resident.dailyPlan?.model?.attempted
@@ -380,7 +436,7 @@ function planSummary(resident) {
       ${resident.dailyPlan.reason ? `<small>${escapeHtml(resident.dailyPlan.reason)}</small>` : ""}
       ${resident.actionQueue?.length ? `<small>${resident.actionQueue.length} queued action${resident.actionQueue.length === 1 ? "" : "s"}</small>` : ""}
       ${socialTarget ? `<small>Wants a word with ${escapeHtml(socialTarget.name)}</small>` : ""}
-      ${obligation ? `<small>Obligation: ${escapeHtml(obligation.status)}</small>` : ""}
+      ${obligation ? `<small>Next commitment: ${escapeHtml(obligation.title)} · ${escapeHtml(obligationDueLabel(obligation))}</small>` : ""}
       ${modelStatus ? `<small class="plan-source">${escapeHtml(modelStatus)}</small>` : ""}
     </div>
   `;
@@ -391,9 +447,11 @@ function residentDossier(resident, { compact = false } = {}) {
   const home = locationById(resident.homeLocationId);
   const work = locationById(resident.workLocationId);
   const routine = resident.routine ?? {};
-  const recentEvents = store.events
-    .filter((event) => event.actorId === resident.id || event.relatedActorId === resident.id || event.actor === resident.name)
-    .slice(0, compact ? 4 : 8);
+  const residentEvents = store.events
+    .filter((event) => event.actorId === resident.id || event.relatedActorId === resident.id || event.actor === resident.name);
+  const meaningfulEvents = residentEvents.filter(isConsequentialEvent);
+  const recentEvents = (meaningfulEvents.length ? meaningfulEvents : residentEvents).slice(0, compact ? 4 : 8);
+  const commitments = openObligationsFor(resident.id);
   const lastEncounterWith = resident.lastEncounterWithId ? residentById(resident.lastEncounterWithId) : null;
   const residentIndex = store.town.residents.findIndex(({ id }) => id === resident.id) + 1;
 
@@ -432,6 +490,8 @@ function residentDossier(resident, { compact = false } = {}) {
           </div>
 
           ${planSummary(resident)}
+
+          ${commitments.length ? `<div class="resident-commitments"><p class="paper-label">Open commitments</p>${commitments.map(obligationRow).join("")}</div>` : ""}
         </section>
 
         <section class="dossier-right">
@@ -439,8 +499,8 @@ function residentDossier(resident, { compact = false } = {}) {
           <div class="paper-relationships">
             ${relationships.length ? relationships.slice(0, compact ? 5 : relationships.length).map(({ relationship, other }) => `
               <div class="paper-relationship">
-                <span>${routeLink(`/residents/${other.id}`, escapeHtml(other.name))}<small>${escapeHtml(relationship.kind)}</small></span>
-                <strong>${escapeHtml(relationship.strength)}</strong>
+                <span>${routeLink(`/residents/${other.id}`, escapeHtml(other.name))}<small>${escapeHtml(relationship.kind)}${relationship.tension >= 20 ? " · strained" : relationship.tension >= 8 ? " · unsettled" : " · steady"}</small></span>
+                <strong><b>${escapeHtml(relationship.strength)}</b><small>${relationship.strength - (relationship.baselineStrength ?? relationship.strength) > 0 ? "+" : ""}${escapeHtml(relationship.strength - (relationship.baselineStrength ?? relationship.strength))} since start</small></strong>
               </div>
             `).join("") : "<p class=\"paper-empty\">No recorded ties yet.</p>"}
           </div>
@@ -449,7 +509,7 @@ function residentDossier(resident, { compact = false } = {}) {
             <p class="paper-label">Recent record</p>
             ${recentEvents.length ? recentEvents.map((event) => `
               <div class="paper-history-row">
-                <span>${escapeHtml(event.time ?? "—")}</span>
+                <span>${escapeHtml(eventStamp(event))}</span>
                 <p><strong>${escapeHtml(eventActor(event).split(" ")[0])}</strong> ${escapeHtml(eventText(event))}</p>
               </div>
             `).join("") : "<p class=\"paper-empty\">No recorded events yet.</p>"}
@@ -563,7 +623,7 @@ async function loadData({ quiet = false } = {}) {
   try {
     const [townResponse, eventsResponse] = await Promise.all([
       fetch("/api/town", { cache: "no-store" }),
-      fetch("/api/events?limit=80", { cache: "no-store" }),
+      fetch("/api/events?limit=200", { cache: "no-store" }),
     ]);
     if (!townResponse.ok || !eventsResponse.ok) throw new Error("The town API returned an error.");
 
@@ -573,6 +633,7 @@ async function loadData({ quiet = false } = {}) {
     store.refreshedAt = new Date();
 
     const environmentLabel = store.town.environment === "staging" ? "Staging" : "Live";
+    document.body.dataset.environment = store.town.environment ?? "preview";
     connectionLabel.textContent = townHasModelActivity()
       ? `${environmentLabel} · model experiment`
       : `${environmentLabel} · scripted rules`;

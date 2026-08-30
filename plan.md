@@ -19,6 +19,7 @@ Success means a fresh staging Calder Station can run for 90 simulated days, prod
 - The deterministic baseline is stable but repetitive. At Day 90 it produces 6,176 events and healthy bounds, but most residents have only 7–11 distinct daily action signatures, relationship change is entirely net-positive, social activity reaches only 13 of 27 ties, and one Sal/Jamie series accounts for 56 near-identical commitments.
 - A Day 365 audit remains healthy but confirms the structural ceiling: the commitment series stops at generation 90, five relationships saturate at 100, none end below their starting value, and resident histories remain dominated by routine movement/eat/work/rest templates. Long-horizon reports now measure those failure modes directly.
 - Four authored civic chains now distribute consequential commitments across existing relationships and underused places. Follow-ups carry parent IDs; delays retry; failures end a cycle until cooldown. Relationship tension and diminishing gains make outcomes non-monotonic. In the post-change Day 365 run, no relationship saturates, one ends weaker than its baseline, all residents have substantial meaningful history, and the invariant report remains healthy.
+- The Folio now separates consequential history from ordinary routine, shows open commitments and their lineage, and gives each relationship both its current strength and change from baseline. The public surface still avoids model telemetry and diagnostic counters.
 - The simulation and long-horizon runner now share an asynchronous planner boundary. Model intent is requested at the exact authoritative planning instant rather than prefetched from state at the beginning of an hourly alarm. Deterministic CI remains no-cost; deliberate paid staging evaluation is the next evidence layer.
 - Current DeepSeek documentation lists weekday peak windows at 01:00–04:00 and 06:00–10:00 UTC, with off-peak pricing at half the peak rate. Scheduled production calls should retain that policy; deliberate evaluation needs an explicit bypass.
 - A fixed 24-case paid evaluation matrix now uses the same authoritative planner, validator, queue, and executor as the town. It varies needs, location, trust, and deadline pressure, records intent versus executed outcome, and estimates cost from cache-aware token usage. Staging runs each revision once from a server-side schedule; no public route can initiate paid work.
@@ -34,7 +35,7 @@ The action queue is intentionally finite: each plan has at most five actions, ea
 
 1. Redeploy staging with its configured DeepSeek secret, verify persistent mode, and collect the fixed genuine evaluation report without touching production state.
 2. Use genuine evaluation results to decide whether the Sal conflict earns model calls or needs stronger pressure.
-3. Expose commitment lineage, tension, and meaningful longitudinal changes through the Folio rather than adding internal counters to the public surface.
+3. Audit wall-clock catch-up, alarm idempotence, and interrupted model requests before expanding model participation.
 
 ## Deferred
 

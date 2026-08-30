@@ -31,3 +31,15 @@ test("every authored resident has a portrait URL in the Folio renderer", () => {
     assert.ok(resident.portraitKey.length > 0, `${resident.id} needs a portrait key`);
   }
 });
+
+test("the Folio distinguishes causal history from routine telemetry", () => {
+  const app = read("public/folio-app.js");
+
+  assert.match(app, /CONSEQUENTIAL_EVENT_TYPES/);
+  assert.match(app, /What may endure/);
+  assert.match(app, /What is owed/);
+  assert.match(app, /status === "open" && obligation\.ownerId === residentId/);
+  assert.match(app, /baselineStrength/);
+  assert.match(app, /api\/events\?limit=200/);
+  assert.doesNotMatch(app, /Obligation:.*obligation\.status/);
+});

@@ -50,13 +50,20 @@
 .register-plan strong { color: #7b5c39; font: 400 17px var(--folio-serif); }
 .register-plan small { color: var(--folio-paper-muted); font-size: 10px; line-height: 1.45; }
 .register-plan .plan-source { color: #8a5b4c; }
+.resident-commitments { margin-top: 28px; padding-top: 20px; border-top: 3px double var(--folio-paper-line); }
+.resident-commitments .commitment-row { border-color: var(--folio-paper-line); }
+.resident-commitments .commitment-row p, .resident-commitments .commitment-row > small { color: var(--folio-paper-muted); }
+.resident-commitments .commitment-row > strong { color: var(--folio-paper-ink); }
+.resident-commitments .commitment-row > em { color: #8a5b4c; }
 .dossier-right { padding-left: 26px; border-left: 1px solid var(--folio-paper-line); }
 .paper-relationships { margin-top: 12px; }
 .paper-relationship { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 11px 0; border-top: 1px solid var(--folio-paper-line); }
 .paper-relationship span > a { font: 400 15px var(--folio-serif); }
 .paper-relationship span > a:hover { color: #82643f; }
 .paper-relationship small { display: block; margin-top: 3px; color: var(--folio-paper-muted); font-size: 10px; }
-.paper-relationship > strong { align-self: center; color: #82643f; font: italic 20px var(--folio-serif); font-weight: 400; }
+.paper-relationship > strong { align-self: center; color: #82643f; text-align: right; font-weight: 400; }
+.paper-relationship > strong b { display: block; font: italic 20px var(--folio-serif); font-weight: 400; }
+.paper-relationship > strong small { color: var(--folio-paper-dim); font: 700 6px var(--folio-mono); letter-spacing: .08em; text-transform: uppercase; }
 .paper-history { margin-top: 30px; padding-top: 22px; border-top: 3px double var(--folio-paper-line); }
 .paper-history-row { display: grid; grid-template-columns: 52px 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--folio-paper-line); }
 .paper-history-row > span { color: var(--folio-paper-dim); font: 700 9px var(--folio-mono); }

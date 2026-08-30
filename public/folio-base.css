@@ -103,6 +103,8 @@ button { color: inherit; }
 }
 .status-chip::before, .status-chip::after { content: ""; width: 14px; height: 1px; background: var(--folio-brass); opacity: .35; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--folio-sage); box-shadow: 0 0 0 4px rgba(127,146,113,.08); }
+body[data-environment="staging"] .status-chip { color: var(--folio-coral); }
+body[data-environment="staging"] .status-dot { background: var(--folio-coral); box-shadow: 0 0 0 4px rgba(184,107,88,.1); }
 
 main { position: relative; z-index: 2; min-height: 560px; padding: 0; }
 h1, h2, h3 { font-family: var(--folio-serif); font-weight: 400; }

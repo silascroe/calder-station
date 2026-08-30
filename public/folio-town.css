@@ -87,15 +87,17 @@
 .journal-sheet::before { content: ""; position: absolute; inset: 9px; pointer-events: none; border: 1px solid rgba(70,65,58,.18); }
 .journal-sheet .eyebrow { color: #82643e; }
 .event-feed { padding: 0; margin: 0; list-style: none; border: 0; }
-.event-row { display: grid; grid-template-columns: 50px 8px 1fr; gap: 12px; align-items: baseline; padding: 14px 0; border-top: 1px solid var(--folio-line-soft); }
+.event-row { display: grid; grid-template-columns: 72px 8px 1fr; gap: 12px; align-items: baseline; padding: 14px 0; border-top: 1px solid var(--folio-line-soft); }
 .event-time { color: var(--folio-dim); font: 500 10px var(--folio-mono); }
 .event-marker { width: 6px; height: 6px; border-radius: 50%; background: var(--folio-brass); }
 .event-marker-movement, .event-marker-observation { background: var(--folio-blue); }
 .event-marker-decision { background: var(--folio-sage); }
-.event-marker-encounter, .event-marker-obligation { background: var(--folio-coral); }
+.event-marker-encounter, .event-marker-obligation, .event-marker-obligation-created, .event-marker-action-interrupted { background: var(--folio-coral); }
 .event-marker-model-fallback { background: #c87968; }
 .event-marker-system { background: var(--folio-dim); }
 .event-row p { margin: 0; color: var(--folio-muted); font-size: 12px; line-height: 1.55; }
+.event-kind { display: block; margin-bottom: 3px; color: var(--folio-dim); font: 700 7px var(--folio-mono); letter-spacing: .12em; text-transform: uppercase; }
+.consequential-event .event-kind { color: var(--folio-coral); }
 .event-row strong { color: var(--folio-ink); font: 400 14px var(--folio-serif); }
 .event-row strong a:hover { color: var(--folio-brass); }
 .journal-event-paper { border-color: var(--folio-paper-line); }
@@ -105,7 +107,11 @@
 .journal-event-paper .event-marker { background: #9c7650; }
 .journal-event-paper .event-marker-movement, .journal-event-paper .event-marker-observation { background: #6a8292; }
 .journal-event-paper .event-marker-decision { background: #697b60; }
-.journal-event-paper .event-marker-encounter, .journal-event-paper .event-marker-obligation { background: #8f6b51; }
+.journal-event-paper .event-marker-encounter, .journal-event-paper .event-marker-obligation, .journal-event-paper .event-marker-obligation-created, .journal-event-paper .event-marker-action-interrupted { background: #8f6b51; }
+.journal-event-paper .event-kind { color: #8b7f72; }
+.journal-event-paper.consequential-event .event-kind { color: #845c48; }
+.ordinary-journal { margin-top: 20px; padding-top: 17px; border-top: 3px double #b4aa9a; }
+.ordinary-journal .event-row { padding: 10px 0; opacity: .78; }
 .journal-motto { margin: 18px 0 0; padding-top: 16px; border-top: 3px double #b4aa9a; color: #57524c; font: italic 16px var(--folio-serif); }
 
 .place-ledger { position: relative; min-width: 0; padding: 30px 24px 34px; border-right: 1px solid var(--folio-line); background: var(--folio-panel); }
@@ -116,6 +122,15 @@
 .place-ledger-row b { min-width: 28px; color: var(--folio-brass); text-align: right; font: italic 24px var(--folio-serif); font-weight: 400; }
 .place-ledger-row:hover strong { color: var(--folio-brass); }
 .ledger-foot { margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--folio-line-soft); color: var(--folio-dim); font: 700 8px var(--folio-mono); letter-spacing: .13em; text-transform: uppercase; }
+.ledger-foot a { color: var(--folio-brass); }
+.commitment-list { display: grid; }
+.commitment-row { padding: 13px 0; border-top: 1px solid var(--folio-line-soft); }
+.commitment-row p { margin: 0 0 4px; color: var(--folio-muted); font: 400 13px var(--folio-serif); }
+.commitment-row p a:hover { color: var(--folio-brass); }
+.commitment-row p span { color: var(--folio-dim); font: 700 7px var(--folio-mono); letter-spacing: .1em; text-transform: uppercase; }
+.commitment-row > strong { display: block; color: var(--folio-ink); font: 400 15px/1.3 var(--folio-serif); }
+.commitment-row > small, .commitment-row > em { display: block; margin-top: 5px; color: var(--folio-dim); font: 700 7px/1.45 var(--folio-mono); letter-spacing: .08em; text-transform: uppercase; }
+.commitment-row > em { color: var(--folio-coral); font-style: normal; }
 
 .people-ledger { min-width: 0; padding: 30px 24px 34px; background: linear-gradient(180deg,var(--folio-panel-light),#12161d); }
 .people-slip-list { display: grid; }
