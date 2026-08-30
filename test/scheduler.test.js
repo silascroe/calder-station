@@ -69,3 +69,4 @@ test("the same roster and day produce the same plan", () => {
     second.map(({ residentId, scheduledAt }) => [residentId, scheduledAt.toISOString()]),
   );
 });
+

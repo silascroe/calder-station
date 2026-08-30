@@ -17,6 +17,7 @@ test("the town seed creates fifteen integrated residents, places, and relationsh
   const decisionTimes = town.residents.map((resident) => resident.nextDecisionAt);
 
   assert.equal(town.now, DEFAULT_START_TIME);
+  assert.equal(town.name, "Calder Station");
   assert.equal(town.mode, "scripted-simulation-preview");
   assert.equal(town.residents.length, 15);
   assert.equal(town.locations.length, 14);
@@ -58,7 +59,7 @@ test("a preview advances the clock and lets each resident make a decision", () =
   assert.equal(town.day, 2);
   assert.equal(town.stats.tickCount, 24);
   assert.equal(town.stats.decisionCount, 15);
-  assert.equal(decisions.length, 15);
+  assert.equal(decisions.length, 44);
   assert.equal(new Set(decisions.map((event) => event.actorId)).size, 15);
   assert.ok(movements.length >= 10);
   assert.ok(town.residents.every((resident) => resident.energy >= 0 && resident.energy <= 100));
@@ -70,10 +71,12 @@ test("a preview advances the clock and lets each resident make a decision", () =
   assert.equal(town.stats.modelCalls, 0);
   assert.equal(town.stats.modelAttempts, 0);
   assert.ok(town.residents.every((resident) => resident.dailyPlan?.action));
+  assert.ok(town.residents.every((resident) => resident.actionCount >= resident.planCount));
+  assert.ok(town.events.some((event) => event.type === "obligation-created"));
   assert.ok(town.events.some((event) => event.type === "encounter" && event.relatedActorId));
   assert.equal(town.obligations[0].status, "fulfilled");
   assert.equal(town.obligations[0].resolution, "fulfill");
-  assert.equal(town.relationships.find(({ id }) => id === "rel-vey-sal").strength, 62);
+  assert.equal(town.relationships.find(({ id }) => id === "rel-vey-sal").strength, 61);
   assert.ok(town.events.some((event) => event.type === "obligation" && event.actorId === "sal"));
   assert.equal(town.relationships.find(({ id }) => id === "rel-thom-pella").strength, 75);
   assert.equal(town.residents.find(({ id }) => id === "thom").lastEncounterWithId, "pella");
@@ -85,8 +88,9 @@ test("the second day exercises ordinary meal and rest rules", () => {
   const decisions = town.events.filter((event) => event.type === "decision");
 
   assert.equal(town.stats.decisionCount, 30);
+  assert.equal(town.stats.actionCount, 88);
   assert.ok(decisions.some((event) => event.text.startsWith("stopped to eat")));
-  assert.ok(town.residents.some((resident) => resident.lastAction === "rest"));
+  assert.ok(decisions.some((event) => event.action === "rest"));
   assert.equal(town.stats.planCount, 30);
   assert.ok(town.stats.encounterCount >= 3);
 });
@@ -98,6 +102,7 @@ test("the tiny seed remains available as a compact regression scenario", () => {
   assert.equal(town.locations.length, 4);
   assert.equal(town.relationships.length, 1);
   assert.equal(town.stats.decisionCount, 3);
+  assert.ok(town.stats.actionCount > town.stats.planCount);
 });
 
 test("the same seed produces the same state and event history", () => {

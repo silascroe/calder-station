@@ -10,22 +10,6 @@ const store = {
   selectedResidentId: "mara",
 };
 
-const LEGACY_NAME_REPLACEMENTS = new Map([
-  ["Mara Venn", "Mara Konstantinidis"],
-  ["Sal Orin", "Sal D’Amico"],
-  ["Irena Vale", "Irena Kaczmarek"],
-  ["Thom Reed", "Tom Reed"],
-  ["June Lark", "June Collins"],
-  ["Bram Ash", "Ben Carter"],
-  ["Corin Pike", "Corin Price"],
-  ["Pella Moss", "Paula Morris"],
-  ["Edda Rusk", "Erin Russell"],
-  ["Vey Arlen", "Jamie Allen"],
-  ["Tamsin Fenn", "Tamsin Moore"],
-  ["Amos Grey", "Amos Foster"],
-  ["Lio Pike", "Leo Price"],
-]);
-
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -37,17 +21,6 @@ function escapeHtml(value) {
 
 function routeLink(path, label, className = "") {
   return `<a class="${className}" href="${path}" data-route>${label}</a>`;
-}
-
-function replaceLegacyNames(value) {
-  let result = String(value ?? "");
-  for (const [oldName, newName] of LEGACY_NAME_REPLACEMENTS) {
-    result = result.replaceAll(oldName, newName);
-    const oldFirst = oldName.split(" ")[0];
-    const newFirst = newName.split(" ")[0];
-    if (oldFirst !== newFirst) result = result.replaceAll(oldFirst, newFirst);
-  }
-  return result;
 }
 
 function residentById(id) {
@@ -109,12 +82,12 @@ function initials(name) {
 }
 
 function eventActor(event) {
-  if (event.actorId) return residentById(event.actorId)?.name ?? replaceLegacyNames(event.actor);
-  return replaceLegacyNames(event.actor);
+  if (event.actorId) return residentById(event.actorId)?.name ?? event.actor;
+  return event.actor;
 }
 
 function eventText(event) {
-  return replaceLegacyNames(event.text);
+  return event.text;
 }
 
 function eventRow(event, { paper = false } = {}) {
@@ -140,13 +113,18 @@ function pageHeader(eyebrow, title, description = "", index = "") {
         <h1>${escapeHtml(title)}</h1>
         ${description ? `<p class="page-description">${escapeHtml(description)}</p>` : ""}
       </div>
-      ${index ? `<div class="folio-index"><strong>${escapeHtml(index)}</strong><span>Rookwood register</span></div>` : ""}
+      ${index ? `<div class="folio-index"><strong>${escapeHtml(index)}</strong><span>Calder Station register</span></div>` : ""}
     </header>
   `;
 }
 
 function residentMark(resident, className = "") {
-  return `<span class="resident-mark ${className}" aria-hidden="true">${escapeHtml(initials(resident.name))}</span>`;
+  const portrait = resident.portraitKey
+    ? `/resident-icons/${encodeURIComponent(resident.portraitKey)}.png`
+    : null;
+  return `<span class="resident-mark ${className}" aria-hidden="true">${portrait
+    ? `<img class="resident-portrait" src="${portrait}" alt="" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="resident-initials">${escapeHtml(initials(resident.name))}</span>`
+    : escapeHtml(initials(resident.name))}</span>`;
 }
 
 function residentWatchRow(resident) {
@@ -167,7 +145,7 @@ function renderOverview() {
   const active = town.residents.filter((resident) => resident.lastAction !== "rest");
   const openObligations = (town.obligations ?? []).filter(({ status }) => status === "open");
   const nextResidents = [...town.residents]
-    .sort((left, right) => String(left.nextDecisionAt).localeCompare(String(right.nextDecisionAt)))
+    .sort((left, right) => String(left.nextPlanAt ?? left.nextDecisionAt).localeCompare(String(right.nextPlanAt ?? right.nextDecisionAt)))
     .slice(0, 3);
   const occupied = town.locations
     .map((location) => ({ location, residents: residentsAt(location.id) }))
@@ -192,7 +170,7 @@ function renderOverview() {
           </div>
         </div>
       </div>
-      <aside class="now-folio" aria-label="Rookwood now">
+      <aside class="now-folio" aria-label="Calder Station now">
         <div class="section-cap"><span>Right now</span></div>
         <div class="clock">${escapeHtml(town.clock.replace(" UTC", ""))}</div>
         <p class="now-weather">${escapeHtml(town.weather)}</p>
@@ -291,7 +269,7 @@ function renderMap() {
 
   app.innerHTML = `
     ${pageHeader(
-      "Rookwood / the ground beneath it",
+      "Calder Station / the ground beneath it",
       "The map",
       "A working survey of the town: stable places in ink, present occupancy laid over them like a clerk's fresh notation.",
       "II",
@@ -299,9 +277,9 @@ function renderMap() {
 
     <section class="survey-layout">
       <div class="survey-wrap">
-        <div class="survey-plate" aria-label="Survey plate of Rookwood">
+        <div class="survey-plate" aria-label="Survey plate of Calder Station">
           <header class="survey-plate-header">
-            <div><p>Survey plate / current register</p><strong>Rookwood & immediate environs</strong></div>
+            <div><p>Survey plate / current register</p><strong>Calder Station & immediate environs</strong></div>
             <span>not to scale<br>current occupancy<br>north is true</span>
           </header>
 
@@ -399,7 +377,8 @@ function planSummary(resident) {
     <div class="register-plan">
       <p class="paper-label">Latest plan</p>
       <strong>${escapeHtml(actionLabel(action))}${plannedLocation ? ` at ${escapeHtml(plannedLocation.name)}` : ""}</strong>
-      ${resident.dailyPlan.reason ? `<small>${escapeHtml(replaceLegacyNames(resident.dailyPlan.reason))}</small>` : ""}
+      ${resident.dailyPlan.reason ? `<small>${escapeHtml(resident.dailyPlan.reason)}</small>` : ""}
+      ${resident.actionQueue?.length ? `<small>${resident.actionQueue.length} queued action${resident.actionQueue.length === 1 ? "" : "s"}</small>` : ""}
       ${socialTarget ? `<small>Wants a word with ${escapeHtml(socialTarget.name)}</small>` : ""}
       ${obligation ? `<small>Obligation: ${escapeHtml(obligation.status)}</small>` : ""}
       ${modelStatus ? `<small class="plan-source">${escapeHtml(modelStatus)}</small>` : ""}
@@ -439,7 +418,9 @@ function residentDossier(resident, { compact = false } = {}) {
             <div><dt>Energy</dt><dd>${escapeHtml(resident.energy)}%</dd></div>
             <div><dt>Hunger</dt><dd>${escapeHtml(resident.hunger)}%</dd></div>
             <div><dt>Current place</dt><dd>${escapeHtml(resident.location)}</dd></div>
-            <div><dt>Next decision</dt><dd>${escapeHtml(residentTime(resident.nextDecisionAt))}</dd></div>
+            <div><dt>Next planning turn</dt><dd>${escapeHtml(residentTime(resident.nextPlanAt ?? resident.nextDecisionAt))}</dd></div>
+            <div><dt>Queued actions</dt><dd>${escapeHtml(resident.actionQueue?.length ?? 0)}</dd></div>
+            <div><dt>Plans / actions</dt><dd>${escapeHtml(`${resident.planCount ?? resident.decisionCount ?? 0} / ${resident.actionCount ?? resident.decisionCount ?? 0}`)}</dd></div>
             <div><dt>Social moments</dt><dd>${escapeHtml(resident.socialCount ?? 0)}</dd></div>
             <div><dt>Last encounter</dt><dd>${escapeHtml(lastEncounterWith?.name ?? "—")}</dd></div>
           </dl>
@@ -447,7 +428,7 @@ function residentDossier(resident, { compact = false } = {}) {
           <div class="ordinary-route">
             <p class="paper-label">Ordinary route</p>
             <div class="route-line"><span>${escapeHtml(home?.name ?? resident.homeLocationId)}</span><i></i><span>${escapeHtml(work?.name ?? resident.workLocationId)}</span></div>
-            <p>${escapeHtml(resident.name.split(" ")[0])} usually starts work at ${hourLabel(routine.workStart)} and finishes around ${hourLabel(routine.workEnd)}. ${escapeHtml(replaceLegacyNames(routine.workReason ?? "The day's work is waiting."))}</p>
+            <p>${escapeHtml(resident.name.split(" ")[0])} usually starts work at ${hourLabel(routine.workStart)} and finishes around ${hourLabel(routine.workEnd)}. ${escapeHtml(routine.workReason ?? "The day's work is waiting.")}</p>
           </div>
 
           ${planSummary(resident)}
@@ -477,7 +458,7 @@ function residentDossier(resident, { compact = false } = {}) {
       </div>
 
       <p class="dossier-margin-note">${escapeHtml(resident.name.split(" ")[0])}'s entry is a record of observable life: routines, ties, places, and recent acts. It is deliberately incomplete.</p>
-      <div class="register-stamp" aria-hidden="true">ROOKWOOD<br>REGISTER</div>
+      <div class="register-stamp" aria-hidden="true">CALDER<br>REGISTER</div>
     </article>
   `;
 }
@@ -490,7 +471,7 @@ function renderResidents() {
   app.innerHTML = `
     ${pageHeader(
       "The town register",
-      "People of Rookwood",
+      "People of Calder Station",
       `${town.residents.length} lives, recorded lightly: where they sleep, where they work, who they know, and what the town has seen them do.`,
       "III",
     )}
@@ -509,6 +490,7 @@ function renderResidents() {
               data-resident-filter="${escapeHtml(`${resident.name} ${resident.role}`.toLowerCase())}"
             >
               <span>${String(index + 1).padStart(2, "0")}</span>
+              ${residentMark(resident, "index-mark")}
               <span><strong>${escapeHtml(resident.name)}</strong><small>${escapeHtml(resident.role)}</small></span>
               <i class="resident-state state-${resident.lastAction === "rest" ? "rest" : "out"}"></i>
             </button>
@@ -532,7 +514,7 @@ function renderResidentDetail(id) {
   if (!resident) return renderNotFound();
 
   app.innerHTML = `
-    ${pageHeader("One life in Rookwood", resident.name, `${resident.role} · ${resident.location}`, "III")}
+    ${pageHeader("One life in Calder Station", resident.name, `${resident.role} · ${resident.location}`, "III")}
     <div class="single-dossier-wrap">${residentDossier(resident)}</div>
     <div class="back-link">${routeLink("/residents", "Back to the town register ←", "text-link")}</div>
   `;
@@ -542,7 +524,7 @@ function renderNotFound() {
   app.innerHTML = `
     <section class="empty-state">
       <p class="eyebrow">404 / beyond the boundary stones</p>
-      <h1>That place is not in Rookwood.</h1>
+      <h1>That place is not in Calder Station.</h1>
       ${routeLink("/", "Return to town", "button button-primary")}
     </section>
   `;
@@ -565,7 +547,7 @@ function render() {
   }
 
   if (!store.town) {
-    app.innerHTML = `<section class="empty-state"><p class="eyebrow">Opening the register</p><h1>Looking into Rookwood…</h1></section>`;
+    app.innerHTML = `<section class="empty-state"><p class="eyebrow">Opening the register</p><h1>Looking into Calder Station…</h1></section>`;
     return;
   }
 
@@ -590,9 +572,10 @@ async function loadData({ quiet = false } = {}) {
     store.error = null;
     store.refreshedAt = new Date();
 
+    const environmentLabel = store.town.environment === "staging" ? "Staging" : "Live";
     connectionLabel.textContent = townHasModelActivity()
-      ? "Live · model experiment"
-      : "Live · scripted rules";
+      ? `${environmentLabel} · model experiment`
+      : `${environmentLabel} · scripted rules`;
   } catch (error) {
     if (!quiet || !store.town) {
       store.error = error instanceof Error ? error.message : "Unable to load the town.";

@@ -7,9 +7,11 @@
 .resident-search:focus { border-color: var(--folio-brass); }
 .resident-search::placeholder { color: var(--folio-dim); }
 .resident-index-list { padding: 0 24px 28px; }
-.resident-index-row { width: 100%; display: grid; grid-template-columns: 34px 1fr auto; gap: 11px; align-items: center; padding: 14px 0; border: 0; border-bottom: 1px solid var(--folio-line-soft); background: transparent; text-align: left; cursor: pointer; }
+.resident-index-row { width: 100%; display: grid; grid-template-columns: 24px 34px 1fr auto; gap: 11px; align-items: center; padding: 10px 0; border: 0; border-bottom: 1px solid var(--folio-line-soft); background: transparent; text-align: left; cursor: pointer; }
 .resident-index-row[hidden] { display: none; }
 .resident-index-row > span:first-child { color: var(--folio-dim); font: 700 8px var(--folio-mono); }
+.resident-index-row .index-mark { width: 34px; height: 40px; border-color: #48505c; }
+.resident-index-row .index-mark .resident-portrait { opacity: .9; }
 .resident-index-row strong { display: block; font: 400 16px var(--folio-serif); font-weight: 400; }
 .resident-index-row small { display: block; margin-top: 3px; color: var(--folio-dim); font: 700 7px var(--folio-mono); letter-spacing: .11em; text-transform: uppercase; }
 .resident-index-row:hover strong, .resident-index-row.active strong { color: var(--folio-brass); }
@@ -23,7 +25,9 @@
 .resident-dossier::before { content: ""; position: absolute; inset: 12px; pointer-events: none; border: 1px solid rgba(75,70,62,.19); }
 .resident-dossier::after { content: "PERSONAL REGISTER"; position: absolute; right: -40px; top: 144px; transform: rotate(90deg); color: rgba(83,75,67,.17); font: 700 8px var(--folio-mono); letter-spacing: .22em; }
 .dossier-head { display: grid; grid-template-columns: auto 1fr auto; gap: 18px; align-items: start; padding-bottom: 24px; border-bottom: 3px double var(--folio-paper-line); }
-.resident-mark { flex: 0 0 auto; display: grid; place-items: center; width: 40px; height: 48px; border: 1px solid var(--folio-line); background: linear-gradient(145deg,var(--folio-panel-light),var(--folio-bg)); color: var(--folio-paper); font: italic 15px var(--folio-serif); }
+.resident-mark { position: relative; overflow: hidden; flex: 0 0 auto; display: grid; place-items: center; width: 40px; height: 48px; border: 1px solid var(--folio-line); background: linear-gradient(145deg,var(--folio-panel-light),var(--folio-bg)); color: var(--folio-paper); font: italic 15px var(--folio-serif); }
+.resident-portrait { display: block; width: 100%; height: 100%; object-fit: cover; }
+.resident-initials { display: none; }
 .dossier-mark { width: 82px; height: 94px; border-color: #8c8175; background: radial-gradient(circle at 45% 32%,rgba(184,107,88,.22),transparent 35%), linear-gradient(145deg,#b8ad9e,#d9d0c1); color: #4d4944; font-size: 27px; }
 .dossier-head .eyebrow { color: #80623d; }
 .dossier-head h2 { margin: 7px 0 4px; font: 400 46px/.95 var(--folio-serif); letter-spacing: -.04em; }

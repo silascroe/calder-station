@@ -14,7 +14,7 @@ function fixtureContent(overrides = {}) {
     priorities: ["fulfill the sealed notice", "keep the route intact"],
     action: "deliver",
     locationId: "town-hall",
-    reason: "Vey's notice is due before noon",
+    reason: "Jamie Allen's notice is due before noon",
     status: "Taking the direct route",
     mood: "Determined",
     obligationDecision: {
@@ -29,7 +29,7 @@ function fixtureContent(overrides = {}) {
 
 function payload(content, overrides = {}) {
   return {
-    id: "chatcmpl-rookwood-test",
+    id: "chatcmpl-calder-test",
     model: "deepseek-v4-flash",
     choices: [{
       finish_reason: "stop",
@@ -77,12 +77,15 @@ test("the DeepSeek adapter sends a bounded JSON decision request", async () => {
   assert.equal(body.messages[0].role, "system");
   assert.equal(body.messages[1].role, "user");
   assert.equal(body.messages[1].content.includes("test-key"), false);
+  assert.equal(body.messages[0].content.includes("Calder Station"), true);
+  assert.equal(body.messages[1].content.includes("Sal D’Amico"), true);
+  assert.equal(body.messages[1].content.includes("Rookwood"), false);
   assert.equal(plan.source, "model");
   assert.equal(plan.actions[0].action, "deliver");
   assert.equal(plan.obligationDecision.choice, "fulfill");
   assert.equal(plan.modelTelemetry.promptTokens, 420);
   assert.equal(plan.modelTelemetry.completionTokens, 96);
-  assert.equal(plan.modelTelemetry.requestId, "chatcmpl-rookwood-test");
+  assert.equal(plan.modelTelemetry.requestId, "chatcmpl-calder-test");
 });
 
 test("provider errors become typed failures for the deterministic fallback", async () => {

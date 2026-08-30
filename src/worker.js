@@ -4,7 +4,7 @@ import {
   runPreview,
   townView,
 } from "./simulation.js";
-import { RookwoodTown, TOWN_NAME } from "./town-do.js";
+import { RookwoodTown, townStorageKey } from "./town-do.js";
 
 export { RookwoodTown };
 
@@ -44,7 +44,7 @@ function persistentRequest(url, path) {
 }
 
 async function persistentApi(env, url, path) {
-  const stub = env.TOWN.getByName(TOWN_NAME);
+  const stub = env.TOWN.getByName(townStorageKey(env));
   return stub.fetch(persistentRequest(url, path));
 }
 
@@ -65,6 +65,7 @@ export default {
           return json({
             ok: true,
             service: "town-dashboard",
+            environment: state.environment,
             mode: state.mode,
             engine: "deterministic-scripted",
             persistence: state.persistence,

@@ -45,7 +45,7 @@ export function scriptedDecision({ resident, now } = {}) {
 
   // The first wake-up gives every seeded resident a visible reason to leave
   // home. Later wake-ups follow the ordinary work, meal, and evening rules.
-  if (resident.decisionCount === 0) {
+  if ((resident.planCount ?? resident.decisionCount ?? 0) === 0) {
     return decision(
       routine.action ?? "work",
       resident.workLocationId,

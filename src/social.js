@@ -55,3 +55,4 @@ export function resolveSocialIntentions(state, resident, plan, at) {
   }
   return encounters;
 }
+

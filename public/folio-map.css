@@ -94,3 +94,4 @@ a.resident-chip:hover { border-color: var(--folio-brass); color: var(--folio-bra
   .survey-label { display: none; }
   .survey-location.selected .survey-label { display: block; position: absolute; left: 25px; }
 }
+

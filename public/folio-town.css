@@ -27,7 +27,7 @@
   clip-path: polygon(0 76%,5% 54%,10% 67%,15% 38%,20% 64%,25% 48%,30% 24%,35% 63%,41% 43%,47% 67%,54% 33%,60% 60%,66% 42%,72% 70%,79% 31%,85% 58%,91% 39%,96% 59%,100% 45%,100% 100%,0 100%);
 }
 .town-folio-hero-main::after {
-  content: "ROOKWOOD / NORTH VALLEY / REGISTER 01";
+  content: "CALDER STATION / NORTH VALLEY / REGISTER 01";
   position: absolute;
   right: 22px;
   bottom: 14px;

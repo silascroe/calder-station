@@ -1,3 +1,5 @@
+import { TOWN_DISPLAY_NAME, TOWN_WORLD_ID } from "./identity.js";
+
 const sharedLocations = [
   { id: "bakery", name: "Sunrise Bakery", type: "Workplace", x: 24, y: 58 },
   { id: "square", name: "Founders Square", type: "Civic", x: 50, y: 43 },
@@ -10,7 +12,7 @@ const sharedLocations = [
   { id: "clinic", name: "The Small Clinic", type: "Civic", x: 87, y: 43 },
   { id: "inn", name: "The Lantern Inn", type: "Commerce", x: 45, y: 72 },
   { id: "farm", name: "Westfield Farm", type: "Workplace", x: 13, y: 82 },
-  { id: "town-hall", name: "Rookwood Hall", type: "Civic", x: 51, y: 33 },
+  { id: "town-hall", name: "Calder Hall", type: "Civic", x: 51, y: 33 },
   { id: "weavers-loft", name: "The Weaver's Loft", type: "Workplace", x: 36, y: 45 },
   { id: "mill", name: "Stonebridge Mill", type: "Workplace", x: 12, y: 58 },
 ];
@@ -53,12 +55,23 @@ const obligations = [
     counterpartyId: "vey",
     destinationId: "town-hall",
     title: "Jamie's sealed notice",
-    description: "A sealed notice from Jamie must reach Rookwood Hall before noon, but Sal's ordinary route is already waiting.",
+    description: "A sealed notice from Jamie must reach Calder Hall before noon, but Sal's ordinary route is already waiting.",
     dueAfterMinutes: 12 * 60,
+    renewable: true,
+    seriesId: "sal-jamie-notices",
+    generation: 0,
   },
 ];
 
-export const TOWN_SEED_REVISION = 4;
+export const TOWN_SEED_REVISION = 5;
+
+function portraitKey(name) {
+  return name
+    .toLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
 
 function resident({
   id,
@@ -92,6 +105,7 @@ function resident({
   return {
     id,
     name,
+    portraitKey: portraitKey(name),
     role,
     homeLocationId,
     workLocationId,
@@ -124,8 +138,8 @@ function resident({
 }
 
 export const townSeed = {
-  id: "rookwood",
-  name: "Rookwood",
+  id: TOWN_WORLD_ID,
+  name: TOWN_DISPLAY_NAME,
   weather: "Cold and clear",
   locations: sharedLocations,
   residents: [

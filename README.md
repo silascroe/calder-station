@@ -1,29 +1,39 @@
 # Town
 
-Town is an experiment in persistent multi-agent simulation: a small world with residents, routines, relationships, resources, and consequences that continue while nobody is looking.
+Town is an experiment in persistent multi-agent simulation: a small world with residents, routines, relationships, commitments, and consequences that continue while nobody is looking.
 
-The repository is deliberately small, but Rookwood is now persistent: one SQLite-backed Cloudflare Durable Object owns its projection, bounded event reads, and hourly heartbeat. The deterministic simulation remains the authority and the public site is a read-only window into it. The ephemeral preview stays fully deterministic; the persistent alarm has one bounded DeepSeek experiment for Sal Orin's seeded obligation when `DEEPSEEK_API_KEY` is configured.
+The public world is **Calder Station**. Its stable internal world and storage key remain `rookwood` so the existing production Durable Object is not orphaned by an editorial rename. That implementation detail is not part of the town's public identity.
 
 ## Design constraints
 
-- Residents are durable state, not permanently running processes.
-- Ordinary simulation mechanics should be deterministic and cheap.
-- A model is consulted for meaningful decisions, not every clock tick.
-- Routine decisions are spread across the day and delayed out of DeepSeek's published UTC peak windows.
-- Urgent decisions may run immediately; the scheduler is a cost policy, not a gag order.
-- Every future side effect should be validated by the simulation before it changes world state.
-- The town should remain interesting with a small population. Bigger is not automatically better.
-- The dashboard is read-only until the simulation and event model are trustworthy.
-- The preview is reproducible and makes zero model calls; the persistent experiment is separately gated and observable.
-- A model may propose only a structured plan; deterministic validation and consequences decide what enters the world.
+- Residents are durable records, not permanently running processes.
+- Ordinary simulation mechanics are deterministic, bounded, and cheap.
+- A model proposes structured intent; the simulation owns legality, timing, state, and consequences.
+- A plan can enqueue several bounded actions, but the queue cannot create an unbounded thought or conversation loop.
+- Model failures fall back to scripted rules and record the fallback.
+- The town remains inspectable through an append-only event history and replayable seeds.
+- Production state is persistent and protected from casual resets; staging is isolated and disposable.
+- The dashboard is a read-only window into the town, not a second simulation engine.
+- D1, Queues, and Workflows remain deferred until this one coordinator has a concrete need for them.
 
-## Run the tests
+## Run tests
 
 ```sh
 npm test
 ```
 
-There are no dependencies to install for the current foundation.
+The current tests use Node's built-in test runner and do not need dependencies installed.
+
+## Run a long-horizon scenario
+
+The scenario runner starts a fresh in-memory staging town and uses the same `advanceTown` rules as production. It does not touch Cloudflare state and does not change the public `?ticks=` limit.
+
+```sh
+npm run scenario -- --days 1,7,30,90
+npm run scenario -- --days 90 --seed another-replay --json
+```
+
+Reports include event counts, plans and actions per resident, relationship deltas, obligation outcomes and generations, activity by place, model telemetry, need ranges, queue state, and invariant/stuck-state checks.
 
 ## Run the dashboard locally
 
@@ -31,52 +41,42 @@ There are no dependencies to install for the current foundation.
 npx wrangler dev
 ```
 
-The local Worker serves the town view and API. With local Durable Object storage enabled, `/api/town` initializes Rookwood and schedules its heartbeat. Routes exist for `/`, `/map`, `/residents`, and individual resident pages. Explicit `?ticks=` requests remain ephemeral replays for inspection and tests.
+The Worker serves the Folio register and read-only routes for `/`, `/map`, `/residents`, and `/residents/:id`. Explicit `?ticks=` requests remain ephemeral replays for inspection and are capped at 48 ticks.
 
-## Current simulation slice
+## Current simulation
 
-The current seed contains fifteen residents, fourteen locations, twenty-seven relationship edges, and one obligation. Each resident has a home, workplace, routine, needs, and a staggered plan slot. The scripted planner returns one bounded daily action plus an optional social intention; the simulation validates and resolves it, and accepted actions, encounters, or obligation outcomes become compact events.
+Calder Station has fifteen residents, fourteen places, twenty-seven relationship edges, and one renewable courier commitment. Each resident receives a staggered daily planning turn. The scripted planner returns a short ordered list of work, meals, rest, deliveries, or observation; the deterministic executor schedules those intentions through the day, interrupts them when a new plan or urgent need requires it, and records each accepted action.
 
-The persistent town currently gives DeepSeek exactly one meaningful choice: Sal must decide whether to fulfill Vey's sealed notice or report a delay. That request is made only when Sal's scheduled turn is due and the obligation is still open. It uses a small JSON response budget, no retry loop, a strict validator, and the same scripted decision as a fallback. Usage, fallback, and outcome are recorded in the projection so the experiment can be judged rather than hand-waved.
+The first model experiment is deliberately narrow: Sal D’Amico may use DeepSeek for the open commitment involving Jamie Allen's notice. The adapter sends bounded context, requires one legal choice, and returns the same plan contract as the scripted planner. The model never writes state directly.
 
-Persisted towns reconcile idempotently with the authored seed. Adding a resident or place updates an existing Rookwood without replacing evolved state or history. Event IDs use the projection's monotonic count, so the town can advance without loading its entire history into memory; viewer reads are capped and newest-first.
+The commitment loop can create a follow-up notice after a fulfillment, delay, or missed due time. Relationship strength changes with the outcome, and the series is capped so a bad rule cannot grow forever.
 
-The preview records a seed as replay metadata, but does not use randomness yet. That is deliberate: deterministic rules are easier to inspect and test before stochastic variation is introduced.
+The compact `tinyTownSeed` remains available for fast regression tests.
 
-For inspection, the preview length can be changed without mutating the town:
+## Environments and deployment
 
-```text
-/api/town?ticks=0
-/api/events?ticks=12
-```
+The manual GitHub Actions workflow accepts a deployment target:
 
-The API accepts `ticks` from `0` through `48`. The `tinyTownSeed` remains available as a compact three-resident regression scenario.
+- `staging` deploys `town-dashboard-staging` and uses the isolated `rookwood-staging` Durable Object key.
+- `production` deploys `town-dashboard` and preserves the canonical persistent `rookwood` key.
+
+Both targets use the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Store `DEEPSEEK_API_KEY` as a Cloudflare Worker secret in the environment that should make model calls; it is never sent to the browser. Production and staging secrets are separate when set with Wrangler's environment flag.
+
+The workflow is intentionally manual. Deploying production or staging is an operator decision, not a side effect of a code commit.
 
 ## Repository layout
 
-- `src/scheduler.js` — pure scheduling policy; no network or platform code.
-- `src/worker.js` — the Cloudflare Worker entry point and API router.
-- `src/town-do.js` — the SQLite-backed town coordinator and alarm heartbeat.
-- `src/simulation.js` — state creation, ticking, event creation, replay, and API projections.
-- `src/scripted-decisions.js` — ordinary rule-based action policy; no model calls.
-- `src/daily-plans.js` — versioned planner contract and validator.
-- `src/obligations.js` — seeded obligation state, fallback decision, and deterministic consequences.
-- `src/deepseek-planner.js` — bounded DeepSeek adapter; it returns plans and never mutates town state.
+- `src/simulation.js` — state creation, the bounded action queue, execution, replay, and projections.
+- `src/daily-plans.js` — versioned plan contract and validator.
+- `src/scripted-decisions.js` — ordinary rule-based intent with no model calls.
+- `src/obligations.js` — commitment resolution, expiry, and bounded renewal.
+- `src/scenario-runner.js` — long-horizon diagnostics and invariant checks.
+- `src/town-do.js` — one SQLite-backed Durable Object coordinator and hourly alarm.
+- `src/deepseek-planner.js` — bounded DeepSeek adapter with typed failures.
 - `src/social.js` — deterministic co-location and relationship resolver.
-- `src/demo-data.js` — the fifteen-resident Rookwood seed and compact test seed.
-- `public/` — the static dashboard shell and client-side routes.
-- `test/` — scheduler, simulation, migration, Durable Object, API, and routing tests.
-- `docs/architecture.md` — the boundary between deterministic simulation, model decisions, memory, and infrastructure.
-
-## Deploy from GitHub
-
-The manual GitHub Actions workflow creates or updates the `town-dashboard` Worker and its `RookwoodTown` Durable Object after these repository secrets exist:
-
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
-
-Run **Deploy Town Dashboard** from the repository's Actions tab. The dashboard never receives the model key. The persistent alarm reads the Cloudflare Worker secret `DEEPSEEK_API_KEY`; if it is absent, Rookwood remains entirely scripted. An optional `DEEPSEEK_MODEL` runtime variable selects another compatible model, otherwise the adapter uses `deepseek-v4-flash`.
-
-## What comes next
-
-The next useful step is observation: let the persistent town cross Sal's scheduled turn, inspect whether the model or fallback resolved the obligation, and compare the resulting event and relationship change. Do not add another model-eligible incident until this one is easy to explain and test. D1 remains unnecessary until cross-town queries or administration create a real need for it.
+- `src/demo-data.js` — authored Calder Station seed and compact regression seed.
+- `src/identity.js` — public identity plus one-time historical migration helpers.
+- `public/` — Folio dashboard, map, resident register, and portrait assets.
+- `test/` — unit, integration, migration, replay, runner, and frontend contract tests.
+- `docs/architecture.md` — system boundaries and decisions.
+- `plan.md` — sequencing and deferred work.

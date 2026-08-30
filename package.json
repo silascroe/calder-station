@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "scenario": "node scripts/run-scenario.mjs",
     "dev": "npx wrangler dev",
     "deploy": "npx wrangler deploy"
   }

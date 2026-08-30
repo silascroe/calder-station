@@ -2,7 +2,9 @@ import { spreadDailyDecisionTimes } from "./scheduler.js";
 import { TOWN_SEED_REVISION, townSeed } from "./demo-data.js";
 import { normalizeDailyPlan } from "./daily-plans.js";
 import {
+  expireOverdueObligations,
   materializeObligation,
+  renewObligations,
   resolveObligationDecision,
   scriptedObligationPlan,
 } from "./obligations.js";
@@ -11,11 +13,14 @@ import { resolveSocialIntentions } from "./social.js";
 const MINUTE_MS = 60 * 1000;
 const HOUR_MINUTES = 60;
 const DAY_MS = 24 * 60 * MINUTE_MS;
+const CANONICAL_SUMMARY = "A small town continuing under deterministic game-AI rules.";
 
 export const DEFAULT_START_TIME = "2026-08-31T00:00:00.000Z";
 export const DEFAULT_TICK_MINUTES = HOUR_MINUTES;
 export const DEFAULT_PREVIEW_TICKS = 24;
 export const MAX_PREVIEW_TICKS = 48;
+
+const ACTIONS = new Set(["work", "eat", "rest", "deliver", "observe"]);
 
 function asDate(value) {
   const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
@@ -42,13 +47,13 @@ function clamp(value, minimum = 0, maximum = 100) {
 }
 
 function locationFor(state, locationId) {
-  const location = state.locations.find((candidate) => candidate.id === locationId);
+  const location = (state.locations ?? []).find((candidate) => candidate.id === locationId);
   if (!location) throw new RangeError(`Unknown location: ${locationId}`);
   return location;
 }
 
 function residentIds(state) {
-  return state.residents.map(({ id }) => id);
+  return (state.residents ?? []).map(({ id }) => id);
 }
 
 function nextRoutineDecision(state, residentId, after, ids = residentIds(state)) {
@@ -73,12 +78,46 @@ function cloneTown(state) {
   return JSON.parse(JSON.stringify(state));
 }
 
+function decisionSnapshot(state, at) {
+  // Planners only need recent context. Avoid copying the entire long-running
+  // journal for every resident's planning turn.
+  const snapshot = cloneTown({ ...state, events: state.events.slice(-8) });
+  if (at) {
+    const decisionAt = asDate(at);
+    snapshot.now = decisionAt.toISOString();
+    snapshot.clock = formatClock(decisionAt);
+  }
+  return snapshot;
+}
+
+function defaultStats() {
+  return {
+    tickCount: 0,
+    decisionCount: 0,
+    planCount: 0,
+    actionCount: 0,
+    interruptedActionCount: 0,
+    modelCalls: 0,
+    modelAttempts: 0,
+    modelFallbacks: 0,
+    modelPromptTokens: 0,
+    modelCompletionTokens: 0,
+    eventCount: 0,
+    encounterCount: 0,
+    obligationCreatedCount: 0,
+    obligationResolvedCount: 0,
+    obligationFailedCount: 0,
+  };
+}
+
 function appendEvent(state, {
   at,
   actorId = null,
   relatedActorId = null,
   locationId = null,
   relationshipId = null,
+  obligationId = null,
+  action = null,
   type,
   text,
   source = "simulation",
@@ -103,6 +142,8 @@ function appendEvent(state, {
   if (relatedActorId) event.relatedActorId = relatedActorId;
   if (locationId) event.locationId = locationId;
   if (relationshipId) event.relationshipId = relationshipId;
+  if (obligationId) event.obligationId = obligationId;
+  if (action) event.action = action;
   state.events.push(event);
   state.stats.eventCount = (state.stats.eventCount ?? 0) + 1;
   return event;
@@ -126,19 +167,115 @@ function applyNeeds(state, minutes) {
   }
 }
 
-function resolveDecision(state, resident, intent, decisionAt, source = "scripted") {
-  const allowedActions = new Set(["work", "eat", "rest", "deliver", "observe"]);
-  if (!intent || !allowedActions.has(intent.action)) {
+function legalIntentFor(resident, intent) {
+  if (intent.action !== "eat" && resident.hunger >= 94) {
+    return {
+      action: "eat",
+      locationId: resident.locationId,
+      reason: "hunger made the queued intention impossible to ignore",
+      status: "Stopping to eat",
+      mood: "Content",
+    };
+  }
+  if (["work", "deliver", "observe"].includes(intent.action) && resident.energy <= 12) {
+    return {
+      action: "rest",
+      locationId: resident.homeLocationId,
+      reason: "energy made the queued intention impossible to carry out",
+      status: "Taking a necessary rest",
+      mood: "Calm",
+    };
+  }
+  return intent;
+}
+
+function normalizeRuntimeState(state) {
+  state.events ??= [];
+  state.locations ??= [];
+  state.residents ??= [];
+  state.relationships ??= [];
+  state.obligations ??= [];
+  const storedStats = state.stats ?? {};
+  const hasStored = (field) => storedStats[field] !== undefined && storedStats[field] !== null;
+  state.stats = { ...defaultStats(), ...storedStats };
+  if (!hasStored("eventCount")) state.stats.eventCount = state.events.length;
+  if (!hasStored("planCount")) state.stats.planCount = hasStored("decisionCount") ? storedStats.decisionCount : 0;
+  if (!hasStored("decisionCount")) state.stats.decisionCount = hasStored("planCount") ? storedStats.planCount : 0;
+  if (!hasStored("actionCount")) {
+    state.stats.actionCount = state.residents.reduce(
+      (total, resident) => total + (resident.actionCount ?? resident.decisionCount ?? 0),
+      0,
+    );
+  }
+  if (!hasStored("obligationCreatedCount")) state.stats.obligationCreatedCount = state.obligations.length;
+  if (!hasStored("obligationResolvedCount")) {
+    state.stats.obligationResolvedCount = state.obligations.filter(({ status }) => (
+      status === "fulfilled" || status === "delayed"
+    )).length;
+  }
+  if (!hasStored("obligationFailedCount")) {
+    state.stats.obligationFailedCount = state.obligations.filter(({ status }) => status === "broken").length;
+  }
+
+  for (const resident of state.residents) {
+    resident.planCount ??= resident.decisionCount ?? 0;
+    resident.decisionCount ??= resident.planCount;
+    resident.actionCount ??= resident.decisionCount;
+    resident.interruptedActionCount ??= 0;
+    resident.lastAction ??= "rest";
+    resident.lastDecisionAt ??= null;
+    resident.dailyPlan ??= null;
+    resident.actionQueue = Array.isArray(resident.actionQueue) ? resident.actionQueue : [];
+    if (resident.nextDecisionAt && resident.nextPlanAt && resident.nextDecisionAt !== resident.nextPlanAt) {
+      // Keep callers that still set the v1 compatibility field working while
+      // stored projections migrate to the explicit planning-turn name.
+      resident.nextPlanAt = resident.nextDecisionAt;
+    }
+    resident.nextPlanAt ??= resident.nextDecisionAt ?? null;
+    if (!resident.nextPlanAt) {
+      resident.nextPlanAt = nextRoutineDecision(state, resident.id, state.now).toISOString();
+    }
+    resident.nextDecisionAt = resident.nextPlanAt;
+    resident.nextActionAt = resident.actionQueue[0]?.scheduledAt ?? null;
+    resident.lastEncounterAt ??= null;
+    resident.lastEncounterWithId ??= null;
+    resident.socialCount ??= 0;
+  }
+
+  state.obligations = state.obligations.map((obligation) => (
+    materializeObligation(obligation, state.startedAt ?? state.now)
+  ));
+  return state;
+}
+
+function resolveAction(state, resident, intent, actionAt, source = "scripted", metadata = {}) {
+  if (!intent || !ACTIONS.has(intent.action)) {
     throw new RangeError(`Unsupported scripted action: ${intent?.action}`);
   }
 
-  const target = locationFor(state, intent.locationId || resident.locationId);
+  const legalIntent = legalIntentFor(resident, intent);
+  if (legalIntent.action !== intent.action || legalIntent.locationId !== intent.locationId) {
+    resident.interruptedActionCount += 1;
+    state.stats.interruptedActionCount += 1;
+    appendEvent(state, {
+      at: actionAt,
+      actorId: resident.id,
+      locationId: resident.locationId,
+      action: intent.action,
+      type: "action-interrupted",
+      text: `changed a queued ${intent.action} intention to ${legalIntent.action}`,
+      source: "simulation",
+      reason: legalIntent.reason,
+    });
+  }
+
+  const target = locationFor(state, legalIntent.locationId || resident.locationId);
   const previousLocation = locationFor(state, resident.locationId);
 
   if (previousLocation.id !== target.id) {
     updateLocation(resident, target);
     appendEvent(state, {
-      at: decisionAt,
+      at: actionAt,
       actorId: resident.id,
       locationId: target.id,
       type: "movement",
@@ -147,25 +284,25 @@ function resolveDecision(state, resident, intent, decisionAt, source = "scripted
     });
   }
 
-  if (intent.action === "work") {
+  if (legalIntent.action === "work") {
     resident.energy = clamp(resident.energy - 8);
-  } else if (intent.action === "eat") {
+  } else if (legalIntent.action === "eat") {
     resident.hunger = clamp(resident.hunger - 38);
     resident.energy = clamp(resident.energy + 3);
-  } else if (intent.action === "rest") {
+  } else if (legalIntent.action === "rest") {
     resident.energy = clamp(resident.energy + 12);
-  } else if (intent.action === "deliver") {
+  } else if (legalIntent.action === "deliver") {
     resident.energy = clamp(resident.energy - 6);
-  } else if (intent.action === "observe") {
+  } else if (legalIntent.action === "observe") {
     resident.energy = clamp(resident.energy - 2);
   }
 
-  resident.status = intent.status;
-  resident.mood = intent.mood;
-  resident.lastAction = intent.action;
-  resident.lastDecisionAt = asDate(decisionAt).toISOString();
-  resident.decisionCount += 1;
-  resident.nextDecisionAt = nextRoutineDecision(state, resident.id, decisionAt).toISOString();
+  resident.status = legalIntent.status;
+  resident.mood = legalIntent.mood;
+  resident.lastAction = legalIntent.action;
+  resident.lastDecisionAt = asDate(actionAt).toISOString();
+  resident.actionCount += 1;
+  state.stats.actionCount += 1;
 
   const actionText = {
     work: `started work at ${target.name}`,
@@ -173,37 +310,295 @@ function resolveDecision(state, resident, intent, decisionAt, source = "scripted
     rest: `settled in to rest at ${target.name}`,
     deliver: `took a delivery route through ${target.name}`,
     observe: `watched ${target.name} for anything unusual`,
-  }[intent.action];
+  }[legalIntent.action];
 
   appendEvent(state, {
-    at: decisionAt,
+    at: actionAt,
     actorId: resident.id,
     locationId: target.id,
+    action: legalIntent.action,
     type: "decision",
     text: actionText,
     source,
-    reason: intent.reason,
+    reason: legalIntent.reason,
   });
+
+  return { ...metadata, actualIntent: legalIntent };
+}
+
+function modelTelemetryFor(plan) {
+  const telemetry = plan.modelTelemetry;
+  const promptTokens = telemetry && Number.isSafeInteger(telemetry.promptTokens) && telemetry.promptTokens >= 0
+    ? telemetry.promptTokens
+    : 0;
+  const completionTokens = telemetry && Number.isSafeInteger(telemetry.completionTokens) && telemetry.completionTokens >= 0
+    ? telemetry.completionTokens
+    : 0;
+  return { telemetry, promptTokens, completionTokens };
+}
+
+function recordPlanTelemetry(state, resident, plan, planAt) {
+  const { telemetry, promptTokens, completionTokens } = modelTelemetryFor(plan);
+  if (!telemetry?.attempted) return;
+
+  state.stats.modelAttempts += 1;
+  state.stats.modelPromptTokens += promptTokens;
+  state.stats.modelCompletionTokens += completionTokens;
+  if (telemetry.fallback) {
+    state.stats.modelFallbacks += 1;
+    appendEvent(state, {
+      at: planAt,
+      actorId: resident.id,
+      locationId: plan.actions[0].locationId,
+      type: "model-fallback",
+      text: "used the scripted fallback after the model could not return a valid plan",
+      source: "model-fallback",
+      reason: telemetry.errorCode ?? "unknown model error",
+    });
+  }
+}
+
+function queueEntryFor(resident, plan, action, sequence, planAt) {
+  const offsetMinutes = action.offsetMinutes ?? sequence * 60;
+  const scheduledAt = new Date(planAt.getTime() + offsetMinutes * MINUTE_MS);
+  return {
+    id: `${resident.id}-plan-${resident.planCount}-action-${sequence + 1}`,
+    sequence,
+    scheduledAt: scheduledAt.toISOString(),
+    intent: {
+      action: action.action,
+      locationId: action.locationId,
+      reason: action.reason,
+      status: action.status,
+      mood: action.mood,
+    },
+    source: plan.source,
+    socialIntentions: sequence === 0
+      ? plan.socialIntentions.map((intention) => ({ ...intention }))
+      : [],
+    obligationDecision: sequence === 0 && plan.obligationDecision
+      ? { ...plan.obligationDecision }
+      : null,
+  };
+}
+
+function queuePlanActions(state, resident, plan, planAt) {
+  const interrupted = resident.actionQueue.length;
+  if (interrupted > 0) {
+    resident.interruptedActionCount += interrupted;
+    state.stats.interruptedActionCount += interrupted;
+    appendEvent(state, {
+      at: planAt,
+      actorId: resident.id,
+      locationId: resident.locationId,
+      type: "action-interrupted",
+      text: `set aside ${interrupted} queued intention${interrupted === 1 ? "" : "s"} for a new daily plan`,
+      source: "simulation",
+      reason: "the next planning turn replaced unfinished intentions",
+    });
+  }
+
+  resident.actionQueue = plan.actions.map((action, sequence) => (
+    queueEntryFor(resident, plan, action, sequence, planAt)
+  ));
+  resident.nextActionAt = resident.actionQueue[0]?.scheduledAt ?? null;
+}
+
+function executePlan(state, resident, decisionAdapter, planAt) {
+  const rawPlan = decisionAdapter({
+    town: decisionSnapshot(state, planAt),
+    resident: { ...resident },
+    now: planAt,
+  });
+  if (rawPlan && typeof rawPlan.then === "function") {
+    throw new TypeError("decisionAdapter must return a synchronous plan");
+  }
+
+  const plan = normalizeDailyPlan(rawPlan, {
+    town: state,
+    resident,
+    now: planAt,
+  });
+  const { telemetry, promptTokens, completionTokens } = modelTelemetryFor(plan);
+  recordPlanTelemetry(state, resident, plan, planAt);
+
+  resident.planCount += 1;
+  resident.decisionCount = resident.planCount;
+  state.stats.planCount += 1;
+  state.stats.decisionCount += 1;
+  if (plan.source === "model") state.stats.modelCalls += 1;
+
+  resident.dailyPlan = {
+    version: plan.version,
+    day: plan.day,
+    source: plan.source,
+    priorities: [...plan.priorities],
+    action: plan.actions[0].action,
+    locationId: plan.actions[0].locationId,
+    reason: plan.actions[0].reason,
+    actionCount: plan.actions.length,
+    actions: plan.actions.map((action) => ({ ...action })),
+    socialIntentions: plan.socialIntentions.map((intention) => ({ ...intention })),
+    obligationDecision: plan.obligationDecision ? { ...plan.obligationDecision } : null,
+    model: telemetry ? {
+      attempted: Boolean(telemetry.attempted),
+      fallback: Boolean(telemetry.fallback),
+      model: telemetry.model ?? null,
+      requestId: telemetry.requestId ?? null,
+      promptTokens,
+      completionTokens,
+      totalTokens: telemetry.totalTokens ?? null,
+      errorCode: telemetry.errorCode ?? null,
+    } : null,
+  };
+
+  resident.nextPlanAt = nextRoutineDecision(state, resident.id, planAt).toISOString();
+  resident.nextDecisionAt = resident.nextPlanAt;
+  queuePlanActions(state, resident, plan, planAt);
+}
+
+function appendObligationOutcome(state, outcome, at, source) {
+  appendEvent(state, {
+    ...outcome,
+    at,
+    source: outcome.source ?? source,
+    obligationId: outcome.obligationId,
+  });
+
+  const obligation = state.obligations.find(({ id }) => id === outcome.obligationId);
+  if (!obligation) return;
+  if (obligation.status === "broken") state.stats.obligationFailedCount += 1;
+  else if (obligation.status === "fulfilled" || obligation.status === "delayed") {
+    state.stats.obligationResolvedCount += 1;
+  }
+}
+
+function recordRenewals(state, at) {
+  const created = renewObligations(state, at);
+  for (const obligation of created) {
+    state.stats.obligationCreatedCount += 1;
+    appendEvent(state, {
+      at,
+      actorId: obligation.ownerId,
+      relatedActorId: obligation.counterpartyId,
+      locationId: obligation.destinationId,
+      obligationId: obligation.id,
+      type: "obligation-created",
+      text: `received a new obligation: ${obligation.title}`,
+      source: "renewal",
+      reason: `continuation of ${obligation.seriesId}`,
+    });
+  }
+}
+
+function advanceCausalState(state, at) {
+  for (const outcome of expireOverdueObligations(state, at)) {
+    appendObligationOutcome(state, outcome, at, "simulation");
+  }
+  recordRenewals(state, at);
+}
+
+function executeAction(state, resident, entry, actionAt) {
+  resident.actionQueue.shift();
+  resident.nextActionAt = resident.actionQueue[0]?.scheduledAt ?? null;
+  const { actualIntent } = resolveAction(state, resident, entry.intent, actionAt, entry.source, entry);
+
+  if (entry.obligationDecision) {
+    const obligation = state.obligations.find(({ id }) => id === entry.obligationDecision.obligationId);
+    const requiredAction = entry.obligationDecision.choice === "fulfill" ? "deliver" : "observe";
+    if (actualIntent.action === requiredAction && obligation?.status === "open") {
+      const obligationEvent = resolveObligationDecision(state, resident, {
+        obligationDecision: entry.obligationDecision,
+      }, actionAt);
+      if (obligationEvent) appendObligationOutcome(state, obligationEvent, actionAt, entry.source);
+    } else {
+      appendEvent(state, {
+        at: actionAt,
+        actorId: resident.id,
+        relatedActorId: obligation?.counterpartyId ?? null,
+        locationId: resident.locationId,
+        obligationId: entry.obligationDecision.obligationId,
+        type: "obligation",
+        text: obligation?.status === "open"
+          ? `could not act on ${obligation.title} during the queued window`
+          : `could not resolve ${obligation?.title ?? "the obligation"} before it expired`,
+        source: "simulation",
+        reason: obligation?.status === "open"
+          ? "ordinary needs interrupted the required action"
+          : "the queued intention arrived after the due time",
+      });
+    }
+  }
+
+  const plan = {
+    socialIntentions: entry.socialIntentions ?? [],
+  };
+  const encounters = resolveSocialIntentions(state, resident, plan, actionAt);
+  for (const encounter of encounters) {
+    appendEvent(state, {
+      at: actionAt,
+      actorId: encounter.actorId,
+      relatedActorId: encounter.targetId,
+      locationId: encounter.locationId,
+      relationshipId: encounter.relationshipId,
+      type: encounter.type,
+      text: encounter.text,
+      source: entry.source,
+      reason: encounter.reason,
+    });
+    state.stats.encounterCount += 1;
+  }
 }
 
 function simulationDay(startedAt, now) {
   return Math.floor((asDate(now).getTime() - asDate(startedAt).getTime()) / DAY_MS) + 1;
 }
 
+function residentStateFromSeed(state, residentSeed, scheduledAfter, ids, status = "Asleep at home") {
+  const location = locationFor(state, residentSeed.initialLocationId);
+  const resident = {
+    ...residentSeed,
+    ...(residentSeed.routine ? { routine: { ...residentSeed.routine } } : {}),
+    locationId: location.id,
+    location: location.name,
+    x: location.x,
+    y: location.y,
+    status,
+    planCount: 0,
+    decisionCount: 0,
+    actionCount: 0,
+    interruptedActionCount: 0,
+    lastAction: "rest",
+    lastDecisionAt: null,
+    nextPlanAt: null,
+    nextDecisionAt: null,
+    nextActionAt: null,
+    actionQueue: [],
+    dailyPlan: null,
+    lastEncounterAt: null,
+    lastEncounterWithId: null,
+    socialCount: 0,
+  };
+  resident.nextPlanAt = nextRoutineDecision(state, resident.id, scheduledAfter, ids).toISOString();
+  resident.nextDecisionAt = resident.nextPlanAt;
+  return resident;
+}
+
 export function createInitialTown({
-  seed = "rookwood-day-one",
+  seed = "calder-station-day-one",
   startTime = DEFAULT_START_TIME,
   seedData = townSeed,
+  environment = "preview",
 } = {}) {
   if (!seedData || !Array.isArray(seedData.locations) || !Array.isArray(seedData.residents)) {
     throw new TypeError("seedData must include locations and residents arrays");
   }
 
   const startedAt = asDate(startTime);
-  const ids = seedData.residents.map(({ id }) => id);
   const state = {
     id: seedData.id,
     name: seedData.name,
+    environment,
     mode: "scripted-simulation-preview",
     persistence: "ephemeral",
     seed,
@@ -213,7 +608,7 @@ export function createInitialTown({
     day: 1,
     clock: formatClock(startedAt),
     weather: seedData.weather,
-    summary: "A replayable first-day simulation driven by ordinary game-AI rules.",
+    summary: "A replayable town simulation driven by bounded game-AI rules.",
     locations: seedData.locations.map((location) => ({ ...location })),
     residents: [],
     relationships: (seedData.relationships ?? []).map((relationship) => ({ ...relationship })),
@@ -221,46 +616,14 @@ export function createInitialTown({
       materializeObligation(obligation, startedAt)
     )),
     events: [],
-    stats: {
-      tickCount: 0,
-      decisionCount: 0,
-      modelCalls: 0,
-      modelAttempts: 0,
-      modelFallbacks: 0,
-      modelPromptTokens: 0,
-      modelCompletionTokens: 0,
-      eventCount: 0,
-      planCount: 0,
-      encounterCount: 0,
-    },
+    stats: defaultStats(),
   };
+  state.stats.obligationCreatedCount = state.obligations.length;
 
-  // The seed is recorded for replay identity in this slice. Stochastic
-  // variation is intentionally deferred until the deterministic rules are
-  // durable enough to test against.
-
-  state.residents = seedData.residents.map((residentSeed) => {
-    const location = locationFor(state, residentSeed.initialLocationId);
-    const resident = {
-      ...residentSeed,
-      ...(residentSeed.routine ? { routine: { ...residentSeed.routine } } : {}),
-      locationId: location.id,
-      location: location.name,
-      x: location.x,
-      y: location.y,
-      status: "Asleep at home",
-      decisionCount: 0,
-      lastAction: "rest",
-      lastDecisionAt: null,
-      nextDecisionAt: null,
-      dailyPlan: null,
-      lastEncounterAt: null,
-      lastEncounterWithId: null,
-      socialCount: 0,
-    };
-    resident.nextDecisionAt = nextRoutineDecision(state, resident.id, startedAt, ids).toISOString();
-    return resident;
-  });
+  const ids = seedData.residents.map(({ id }) => id);
+  state.residents = seedData.residents.map((residentSeed) => (
+    residentStateFromSeed(state, residentSeed, startedAt, ids)
+  ));
 
   appendEvent(state, {
     at: startedAt,
@@ -270,6 +633,38 @@ export function createInitialTown({
   });
 
   return state;
+}
+
+function duePlanCandidate(state, to) {
+  return state.residents
+    .filter((resident) => resident.nextPlanAt && asDate(resident.nextPlanAt) <= to)
+    .sort((left, right) => {
+      const atDifference = asDate(left.nextPlanAt) - asDate(right.nextPlanAt);
+      return atDifference || left.id.localeCompare(right.id);
+    })[0] ?? null;
+}
+
+function dueActionCandidate(state, to) {
+  return state.residents
+    .filter((resident) => resident.actionQueue[0]?.scheduledAt)
+    .filter((resident) => asDate(resident.actionQueue[0].scheduledAt) <= to)
+    .sort((left, right) => {
+      const atDifference = asDate(left.actionQueue[0].scheduledAt)
+        - asDate(right.actionQueue[0].scheduledAt);
+      return atDifference || left.id.localeCompare(right.id);
+    })[0] ?? null;
+}
+
+function chooseDueWork(state, to) {
+  const planResident = duePlanCandidate(state, to);
+  const actionResident = dueActionCandidate(state, to);
+  if (!planResident) return actionResident ? { kind: "action", resident: actionResident } : null;
+  if (!actionResident) return { kind: "plan", resident: planResident };
+
+  const planAt = asDate(planResident.nextPlanAt);
+  const actionAt = asDate(actionResident.actionQueue[0].scheduledAt);
+  if (planAt <= actionAt) return { kind: "plan", resident: planResident };
+  return { kind: "action", resident: actionResident };
 }
 
 export function advanceTown(state, {
@@ -283,207 +678,130 @@ export function advanceTown(state, {
     throw new TypeError("decisionAdapter must be a function");
   }
 
-  const next = cloneTown(state);
+  const next = normalizeRuntimeState(cloneTown(state));
   const from = asDate(next.now);
   const to = new Date(from.getTime() + minutes * MINUTE_MS);
-  const dueResidents = next.residents
-    .filter((resident) => resident.nextDecisionAt && asDate(resident.nextDecisionAt) <= to)
-    .sort((left, right) => {
-      const atDifference = asDate(left.nextDecisionAt) - asDate(right.nextDecisionAt);
-      return atDifference || left.id.localeCompare(right.id);
-    });
-
   let cursor = from;
-  for (const resident of dueResidents) {
-    const decisionAt = asDate(resident.nextDecisionAt);
-    const effectiveDecisionAt = decisionAt < cursor ? cursor : decisionAt;
-    applyNeeds(next, (effectiveDecisionAt.getTime() - cursor.getTime()) / MINUTE_MS);
 
-    const rawPlan = decisionAdapter({
-      town: cloneTown(next),
-      resident: { ...resident },
-      now: effectiveDecisionAt,
-    });
-    const plan = normalizeDailyPlan(rawPlan, {
-      town: next,
-      resident,
-      now: effectiveDecisionAt,
-    });
-    const action = plan.actions[0];
-    const telemetry = plan.modelTelemetry;
-    const promptTokens = telemetry && Number.isSafeInteger(telemetry.promptTokens) && telemetry.promptTokens >= 0
-      ? telemetry.promptTokens
-      : 0;
-    const completionTokens = telemetry && Number.isSafeInteger(telemetry.completionTokens) && telemetry.completionTokens >= 0
-      ? telemetry.completionTokens
-      : 0;
-    if (telemetry?.attempted) {
-      next.stats.modelAttempts = (next.stats.modelAttempts ?? 0) + 1;
-      next.stats.modelPromptTokens = (next.stats.modelPromptTokens ?? 0) + promptTokens;
-      next.stats.modelCompletionTokens = (next.stats.modelCompletionTokens ?? 0) + completionTokens;
-      if (telemetry.fallback) {
-        next.stats.modelFallbacks = (next.stats.modelFallbacks ?? 0) + 1;
-        appendEvent(next, {
-          at: effectiveDecisionAt,
-          actorId: resident.id,
-          locationId: action.locationId,
-          type: "model-fallback",
-          text: "used the scripted fallback after the model could not return a valid plan",
-          source: "model-fallback",
-          reason: telemetry.errorCode ?? "unknown model error",
-        });
-      }
-    }
-    resident.dailyPlan = {
-      version: plan.version,
-      day: plan.day,
-      source: plan.source,
-      priorities: [...plan.priorities],
-      action: action.action,
-      locationId: action.locationId,
-      reason: action.reason,
-      actionCount: plan.actions.length,
-      socialIntentions: plan.socialIntentions.map((intention) => ({ ...intention })),
-      obligationDecision: plan.obligationDecision ? { ...plan.obligationDecision } : null,
-      model: telemetry ? {
-        attempted: Boolean(telemetry.attempted),
-        fallback: Boolean(telemetry.fallback),
-        model: telemetry.model ?? null,
-        requestId: telemetry.requestId ?? null,
-        promptTokens,
-        completionTokens,
-        totalTokens: telemetry.totalTokens ?? null,
-        errorCode: telemetry.errorCode ?? null,
-      } : null,
-    };
-    next.stats.planCount = (next.stats.planCount ?? 0) + 1;
-    if (plan.source === "model") next.stats.modelCalls = (next.stats.modelCalls ?? 0) + 1;
-    resolveDecision(next, resident, action, effectiveDecisionAt, plan.source);
+  advanceCausalState(next, from);
 
-    const obligationEvent = resolveObligationDecision(next, resident, plan, effectiveDecisionAt);
-    if (obligationEvent) {
-      appendEvent(next, {
-        ...obligationEvent,
-        at: effectiveDecisionAt,
-        source: plan.source,
-      });
-    }
+  while (true) {
+    const work = chooseDueWork(next, to);
+    if (!work) break;
 
-    const encounters = resolveSocialIntentions(next, resident, plan, effectiveDecisionAt);
-    for (const encounter of encounters) {
-      appendEvent(next, {
-        at: effectiveDecisionAt,
-        actorId: encounter.actorId,
-        relatedActorId: encounter.targetId,
-        locationId: encounter.locationId,
-        relationshipId: encounter.relationshipId,
-        type: encounter.type,
-        text: encounter.text,
-        source: plan.source,
-        reason: encounter.reason,
-      });
-      next.stats.encounterCount = (next.stats.encounterCount ?? 0) + 1;
+    const scheduledAt = work.kind === "plan"
+      ? asDate(work.resident.nextPlanAt)
+      : asDate(work.resident.actionQueue[0].scheduledAt);
+    const effectiveAt = scheduledAt < cursor ? cursor : scheduledAt;
+    applyNeeds(next, (effectiveAt.getTime() - cursor.getTime()) / MINUTE_MS);
+    advanceCausalState(next, effectiveAt);
+
+    if (work.kind === "plan") {
+      executePlan(next, work.resident, decisionAdapter, effectiveAt);
+    } else {
+      executeAction(next, work.resident, work.resident.actionQueue[0], effectiveAt);
     }
-    next.stats.decisionCount += 1;
-    cursor = effectiveDecisionAt;
+    cursor = effectiveAt;
   }
 
   applyNeeds(next, (to.getTime() - cursor.getTime()) / MINUTE_MS);
+  advanceCausalState(next, to);
   next.now = to.toISOString();
   next.day = simulationDay(next.startedAt, to);
   next.clock = formatClock(to);
   next.stats.tickCount += 1;
+  for (const resident of next.residents) {
+    resident.nextDecisionAt = resident.nextPlanAt;
+    resident.nextActionAt = resident.actionQueue[0]?.scheduledAt ?? null;
+  }
   return next;
-}
-
-function residentFromSeed(state, residentSeed, scheduledAfter, ids) {
-  const location = locationFor(state, residentSeed.initialLocationId);
-  const resident = {
-    ...residentSeed,
-    ...(residentSeed.routine ? { routine: { ...residentSeed.routine } } : {}),
-    locationId: location.id,
-    location: location.name,
-    x: location.x,
-    y: location.y,
-    status: "Settling into town",
-    decisionCount: 0,
-    lastAction: "rest",
-    lastDecisionAt: null,
-    nextDecisionAt: null,
-    dailyPlan: null,
-    lastEncounterAt: null,
-    lastEncounterWithId: null,
-    socialCount: 0,
-  };
-  resident.nextDecisionAt = nextRoutineDecision(state, resident.id, scheduledAfter, ids).toISOString();
-  return resident;
 }
 
 /**
  * Idempotently brings a persisted projection up to the current authored seed
- * without replacing the history or evolved state of existing residents.
+ * without replacing evolved needs, queues, relationships, or history.
  */
 export function reconcileTownWithSeed(state, { seedData = townSeed } = {}) {
-  const next = cloneTown(state);
-  let metadataChanged = next.seedRevision !== TOWN_SEED_REVISION;
-  next.events ??= [];
-  next.stats ??= {
-    tickCount: 0,
-    decisionCount: 0,
-    modelCalls: 0,
-    modelAttempts: 0,
-    modelFallbacks: 0,
-    modelPromptTokens: 0,
-    modelCompletionTokens: 0,
-    eventCount: 0,
-    planCount: 0,
-    encounterCount: 0,
-  };
-  next.stats.eventCount ??= next.events.length;
-  if (!("modelCalls" in next.stats) || !("planCount" in next.stats) || !("encounterCount" in next.stats)
-    || !("modelAttempts" in next.stats) || !("modelFallbacks" in next.stats)
-    || !("modelPromptTokens" in next.stats) || !("modelCompletionTokens" in next.stats)) {
+  const next = normalizeRuntimeState(cloneTown(state));
+  const previousSeedRevision = Number(next.seedRevision ?? 0);
+  let metadataChanged = previousSeedRevision !== TOWN_SEED_REVISION;
+  const changes = { locations: 0, residents: 0, relationships: 0, obligations: 0 };
+  let authoredCopyChanged = false;
+
+  if (next.id !== seedData.id) {
+    next.id = seedData.id;
     metadataChanged = true;
   }
-  next.stats.planCount ??= next.stats.decisionCount ?? 0;
-  next.stats.encounterCount ??= 0;
-  next.stats.modelCalls ??= 0;
-  next.stats.modelAttempts ??= 0;
-  next.stats.modelFallbacks ??= 0;
-  next.stats.modelPromptTokens ??= 0;
-  next.stats.modelCompletionTokens ??= 0;
-  if (!("obligations" in next) || !Array.isArray(next.obligations)) metadataChanged = true;
-  next.obligations = Array.isArray(next.obligations) ? next.obligations : [];
-
-  const changes = { locations: 0, residents: 0, relationships: 0, obligations: 0 };
-  const locationIds = new Set(next.locations.map(({ id }) => id));
-  for (const location of seedData.locations) {
-    if (locationIds.has(location.id)) continue;
-    next.locations.push({ ...location });
-    locationIds.add(location.id);
-    changes.locations += 1;
+  if (next.name !== seedData.name) {
+    next.name = seedData.name;
+    authoredCopyChanged = true;
+  }
+  if (next.weather !== seedData.weather) {
+    next.weather = seedData.weather;
+    authoredCopyChanged = true;
+  }
+  if (!next.summary || next.summary !== CANONICAL_SUMMARY) {
+    next.summary = CANONICAL_SUMMARY;
+    authoredCopyChanged = true;
   }
 
-  const residentIds = new Set(next.residents.map(({ id }) => id));
-  for (const resident of next.residents) {
-    if (!("dailyPlan" in resident) || !("lastEncounterAt" in resident) || !("lastEncounterWithId" in resident) || !("socialCount" in resident)) {
-      metadataChanged = true;
+  const locationsById = new Map(next.locations.map((location) => [location.id, location]));
+  for (const locationSeed of seedData.locations) {
+    const existing = locationsById.get(locationSeed.id);
+    if (!existing) {
+      next.locations.push({ ...locationSeed });
+      locationsById.set(locationSeed.id, next.locations.at(-1));
+      changes.locations += 1;
+      continue;
     }
-    resident.dailyPlan ??= null;
-    resident.lastEncounterAt ??= null;
-    resident.lastEncounterWithId ??= null;
-    resident.socialCount ??= 0;
+    for (const field of ["name", "type", "x", "y"]) {
+      if (existing[field] !== locationSeed[field]) {
+        existing[field] = locationSeed[field];
+        authoredCopyChanged = true;
+      }
+    }
   }
+
+  const residentIdsInState = new Set(next.residents.map(({ id }) => id));
   const allResidentIds = seedData.residents.map(({ id }) => id);
+  const residentSeeds = new Map(seedData.residents.map((resident) => [resident.id, resident]));
+  for (const resident of next.residents) {
+    const seed = residentSeeds.get(resident.id);
+    if (!seed) continue;
+    for (const field of ["name", "portraitKey", "role", "homeLocationId", "workLocationId", "initialLocationId"]) {
+      if (resident[field] !== seed[field]) {
+        resident[field] = seed[field];
+        authoredCopyChanged = true;
+      }
+    }
+    if (previousSeedRevision < TOWN_SEED_REVISION && seed.routine) {
+      const routine = JSON.stringify(seed.routine);
+      if (JSON.stringify(resident.routine ?? null) !== routine) {
+        resident.routine = cloneTown(seed.routine);
+        authoredCopyChanged = true;
+      }
+    }
+    if (!locationsById.has(resident.locationId)) {
+      updateLocation(resident, locationsById.get(seed.initialLocationId));
+      authoredCopyChanged = true;
+    } else {
+      updateLocation(resident, locationsById.get(resident.locationId));
+    }
+  }
   for (const residentSeed of seedData.residents) {
-    if (residentIds.has(residentSeed.id)) continue;
-    next.residents.push(residentFromSeed(next, residentSeed, next.now, allResidentIds));
-    residentIds.add(residentSeed.id);
+    if (residentIdsInState.has(residentSeed.id)) continue;
+    next.residents.push(residentStateFromSeed(
+      next,
+      residentSeed,
+      next.now,
+      allResidentIds,
+      "Settling into town",
+    ));
+    residentIdsInState.add(residentSeed.id);
     changes.residents += 1;
   }
 
-  const relationshipIds = new Set((next.relationships ?? []).map(({ id }) => id));
-  next.relationships ??= [];
+  const relationshipIds = new Set(next.relationships.map(({ id }) => id));
   for (const relationship of seedData.relationships ?? []) {
     if (relationshipIds.has(relationship.id)) continue;
     next.relationships.push({ ...relationship });
@@ -492,30 +810,63 @@ export function reconcileTownWithSeed(state, { seedData = townSeed } = {}) {
   }
 
   const obligationIds = new Set(next.obligations.map(({ id }) => id));
-  for (const obligation of seedData.obligations ?? []) {
-    if (obligationIds.has(obligation.id)) continue;
-    next.obligations.push(materializeObligation(obligation, next.startedAt));
-    obligationIds.add(obligation.id);
+  const obligationSeeds = new Map((seedData.obligations ?? []).map((obligation) => [obligation.id, obligation]));
+  for (const obligation of next.obligations) {
+    const seed = obligationSeeds.get(obligation.id);
+    if (!seed) continue;
+    for (const field of [
+      "kind",
+      "ownerId",
+      "counterpartyId",
+      "destinationId",
+      "title",
+      "description",
+      "dueAfterMinutes",
+      "renewable",
+      "seriesId",
+    ]) {
+      if (obligation[field] !== seed[field]) {
+        obligation[field] = seed[field];
+        authoredCopyChanged = true;
+      }
+    }
+    obligation.generation ??= seed.generation ?? 0;
+    obligation.parentObligationId ??= null;
+  }
+  for (const obligationSeed of seedData.obligations ?? []) {
+    if (obligationIds.has(obligationSeed.id)) continue;
+    next.obligations.push(materializeObligation(obligationSeed, next.startedAt));
+    obligationIds.add(obligationSeed.id);
     changes.obligations += 1;
   }
+  next.stats.obligationCreatedCount += changes.obligations;
 
   next.seedRevision = TOWN_SEED_REVISION;
-  const changed = Object.values(changes).some((count) => count > 0);
+  const additions = [];
+  if (changes.residents) additions.push(`${changes.residents} residents`);
+  if (changes.locations) additions.push(`${changes.locations} places`);
+  if (changes.relationships) additions.push(`${changes.relationships} relationships`);
+  if (changes.obligations) additions.push(`${changes.obligations} obligation${changes.obligations === 1 ? "" : "s"}`);
+  const additionsChanged = additions.length > 0;
+  const changed = additionsChanged || authoredCopyChanged;
   if (changed) {
-    const additions = [];
-    if (changes.residents) additions.push(`${changes.residents} residents`);
-    if (changes.locations) additions.push(`${changes.locations} places`);
-    if (changes.relationships) additions.push(`${changes.relationships} relationships`);
-    if (changes.obligations) additions.push(`${changes.obligations} obligation${changes.obligations === 1 ? "" : "s"}`);
+    const text = additionsChanged
+      ? `the town register added ${additions.join(" and ")}`
+      : "the town register adopted its current names and authored details";
     appendEvent(next, {
       at: next.now,
       type: "system",
       source: "migration",
-      text: `the town register added ${additions.join(" and ")}`,
+      text,
     });
   }
 
-  return { state: next, changed, needsPersist: changed || metadataChanged, changes };
+  return {
+    state: next,
+    changed,
+    needsPersist: changed || metadataChanged,
+    changes,
+  };
 }
 
 export function runPreview({

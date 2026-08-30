@@ -19,6 +19,7 @@ test("health endpoint reports the deterministic simulation Worker", async () => 
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
   assert.equal(body.service, "town-dashboard");
+  assert.equal(body.environment, "preview");
   assert.equal(body.mode, "scripted-simulation-preview");
   assert.equal(body.engine, "deterministic-scripted");
   assert.equal(body.persistence, "ephemeral");
@@ -33,13 +34,14 @@ test("town endpoint exposes the replayable fifteen-resident simulation", async (
   const body = await response.json();
 
   assert.equal(response.status, 200);
-  assert.equal(body.name, "Rookwood");
+  assert.equal(body.name, "Calder Station");
   assert.equal(body.residents.length, 15);
   assert.equal(body.locations.length, 14);
   assert.equal(body.relationships.length, 27);
   assert.equal(body.mode, "scripted-simulation-preview");
   assert.equal(body.stats.tickCount, 24);
   assert.equal(body.stats.decisionCount, 15);
+  assert.equal(body.stats.actionCount, 44);
   assert.equal("events" in body, false);
 });
 
@@ -51,8 +53,8 @@ test("events endpoint returns newest events and page routes delegate to assets",
   const eventsBody = await eventsResponse.json();
 
   assert.equal(eventsResponse.status, 200);
-  assert.equal(eventsBody.events[0].type, "encounter");
-  assert.equal(eventsBody.events.length, 31);
+  assert.equal(eventsBody.events[0].type, "decision");
+  assert.equal(eventsBody.events.length, 81);
   assert.equal(missing.status, 404);
   assert.equal(page.status, 200);
   assert.equal(await page.text(), "asset:/map");
@@ -76,6 +78,7 @@ test("preview ticks can be changed without making the API mutable", async () => 
 
   assert.equal(response.status, 200);
   assert.equal(body.now, "2026-08-31T00:00:00.000Z");
+  assert.equal(body.name, "Calder Station");
   assert.equal(body.stats.tickCount, 0);
   assert.equal(body.stats.decisionCount, 0);
 });

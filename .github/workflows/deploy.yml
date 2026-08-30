@@ -2,14 +2,23 @@ name: Deploy Town Dashboard
 
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Cloudflare environment to deploy
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
 
 permissions:
   contents: read
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -17,7 +26,33 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Deploy Worker
+  deploy-staging:
+    if: ${{ inputs.environment == 'staging' }}
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Deploy staging Worker
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4"
+          command: deploy --env staging
+
+  deploy-production:
+    if: ${{ inputs.environment == 'production' }}
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Deploy production Worker
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

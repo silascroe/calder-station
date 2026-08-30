@@ -4,6 +4,9 @@
   "main": "src/worker.js",
   "compatibility_date": "2026-08-30",
   "workers_dev": true,
+  "vars": {
+    "TOWN_ENV": "production"
+  },
   "durable_objects": {
     "bindings": [
       {
@@ -23,5 +26,13 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
+  },
+  "env": {
+    "staging": {
+      "name": "town-dashboard-staging",
+      "vars": {
+        "TOWN_ENV": "staging"
+      }
+    }
   }
 }

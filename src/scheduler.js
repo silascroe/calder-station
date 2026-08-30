@@ -156,3 +156,4 @@ export function spreadDailyDecisionTimes({ day, residentIds, peakWindows } = {})
     };
   });
 }
+

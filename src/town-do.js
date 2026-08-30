@@ -1,25 +1,49 @@
 import {
+  migrateLegacyEvent,
+  TOWN_DISPLAY_NAME,
+  TOWN_STORAGE_KEY,
+  TOWN_WORLD_ID,
+} from "./identity.js";
+import { TOWN_SEED_REVISION } from "./demo-data.js";
+import {
   advanceTown,
   createInitialTown,
   reconcileTownWithSeed,
   townView,
 } from "./simulation.js";
-import { townSeed } from "./demo-data.js";
 import {
   openObligationFor,
   scriptedObligationPlan,
 } from "./obligations.js";
+import { isPeakPeriod } from "./scheduler.js";
 import {
   createDeepSeekPlan,
   DEFAULT_DEEPSEEK_MODEL,
   MODEL_RESIDENT_ID,
 } from "./deepseek-planner.js";
 
-export const TOWN_NAME = "rookwood";
+// Keep the exported name and production key stable. Renaming the public town
+// must not strand the existing production Durable Object behind a new object
+// name. The display identity lives in the state and authored seed instead.
+export const TOWN_NAME = TOWN_WORLD_ID;
+export const PRODUCTION_ENVIRONMENT = "production";
+export const STAGING_ENVIRONMENT = "staging";
 export const SIMULATION_STEP_MINUTES = 60;
 export const HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000;
 export const DEFAULT_EVENT_LIMIT = 80;
 export const MAX_EVENT_LIMIT = 200;
+
+export function townEnvironment(env = {}) {
+  return env.TOWN_ENV === STAGING_ENVIRONMENT
+    ? STAGING_ENVIRONMENT
+    : PRODUCTION_ENVIRONMENT;
+}
+
+export function townStorageKey(env = {}) {
+  return townEnvironment(env) === STAGING_ENVIRONMENT
+    ? `${TOWN_STORAGE_KEY}-staging`
+    : TOWN_STORAGE_KEY;
+}
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS town_state (
@@ -56,6 +80,12 @@ function projectionFor(state) {
   return projection;
 }
 
+function modeFor(environment) {
+  return environment === STAGING_ENVIRONMENT
+    ? "staging-persistent-simulation"
+    : "persistent-scripted-simulation";
+}
+
 function eventLimit(url) {
   const value = url.searchParams.get("limit");
   if (value === null || value === "") return DEFAULT_EVENT_LIMIT;
@@ -69,63 +99,39 @@ function eventLimit(url) {
 
 function dueWithin(state, residentId, minutes) {
   const resident = state.residents.find(({ id }) => id === residentId);
-  if (!resident?.nextDecisionAt) return null;
-  const decisionAt = new Date(resident.nextDecisionAt);
+  const nextPlanAt = resident?.nextPlanAt ?? resident?.nextDecisionAt;
+  if (!nextPlanAt) return null;
+  const planAt = new Date(nextPlanAt);
   const horizon = new Date(new Date(state.now).getTime() + minutes * 60 * 1000);
-  if (Number.isNaN(decisionAt.getTime()) || decisionAt > horizon) return null;
-  return { resident, decisionAt };
+  if (Number.isNaN(planAt.getTime()) || planAt > horizon) return null;
+  return { resident, decisionAt: planAt };
 }
 
-/**
- * Seed reconciliation deliberately preserves evolved resident state. Names and
- * authored routine copy are different: they are editorial metadata, so a seed
- * revision may safely refresh them without resetting energy, location, plans,
- * relationships, or history.
- */
-function syncAuthoredResidentCopy(state, { refreshRoutineCopy = false } = {}) {
+function migrateStoredEvents(sql, previousSeedRevision) {
+  if (previousSeedRevision >= TOWN_SEED_REVISION) return false;
+  const rows = sql.exec("SELECT id, event_json FROM town_events").toArray();
   let changed = false;
-  const residentSeeds = new Map(townSeed.residents.map((resident) => [resident.id, resident]));
-
-  for (const resident of state.residents ?? []) {
-    const seed = residentSeeds.get(resident.id);
-    if (!seed) continue;
-
-    if (resident.name !== seed.name) {
-      resident.name = seed.name;
-      changed = true;
-    }
-
-    if (refreshRoutineCopy && seed.routine) {
-      const nextRoutine = clone(seed.routine);
-      if (JSON.stringify(resident.routine ?? null) !== JSON.stringify(nextRoutine)) {
-        resident.routine = nextRoutine;
-        changed = true;
-      }
-    }
+  for (const row of rows) {
+    const event = JSON.parse(row.event_json);
+    const migrated = migrateLegacyEvent(event);
+    if (JSON.stringify(migrated) === JSON.stringify(event)) continue;
+    sql.exec(
+      "UPDATE town_events SET event_json = ? WHERE id = ?",
+      JSON.stringify(migrated),
+      row.id,
+    );
+    changed = true;
   }
-
-  if (refreshRoutineCopy) {
-    const obligationSeeds = new Map((townSeed.obligations ?? []).map((obligation) => [obligation.id, obligation]));
-    for (const obligation of state.obligations ?? []) {
-      const seed = obligationSeeds.get(obligation.id);
-      if (!seed) continue;
-      for (const field of ["title", "description"]) {
-        if (obligation[field] !== seed[field]) {
-          obligation[field] = seed[field];
-          changed = true;
-        }
-      }
-    }
-  }
-
   return changed;
 }
 
-/** One serialized owner for Rookwood's projection, event log, and heartbeat. */
+/** One serialized owner for the town projection, event log, and heartbeat. */
 export class RookwoodTown {
   constructor(ctx, env) {
     this.ctx = ctx;
     this.env = env;
+    this.environment = townEnvironment(env);
+    this.storageKey = townStorageKey(env);
     this.sql = ctx.storage.sql;
 
     const initialize = async () => this.sql.exec(SCHEMA);
@@ -146,7 +152,7 @@ export class RookwoodTown {
          ON CONFLICT(id) DO UPDATE SET
            state_json = excluded.state_json,
            updated_at = excluded.updated_at`,
-        TOWN_NAME,
+        this.storageKey,
         projection,
         updatedAt,
       );
@@ -195,14 +201,16 @@ export class RookwoodTown {
 
   async load() {
     const rows = this.sql
-      .exec("SELECT state_json FROM town_state WHERE id = ?", TOWN_NAME)
+      .exec("SELECT state_json FROM town_state WHERE id = ?", this.storageKey)
       .toArray();
 
     if (rows.length === 0) {
-      const state = createInitialTown();
-      state.mode = "persistent-scripted-simulation";
+      const state = createInitialTown({ environment: this.environment });
+      state.mode = modeFor(this.environment);
       state.persistence = "durable-object";
-      state.summary = "A small town continuing under deterministic game rules.";
+      state.summary = this.environment === STAGING_ENVIRONMENT
+        ? "A disposable staging town for testing deterministic rules."
+        : "A small town continuing under deterministic game-AI rules.";
       this.persist(state);
       await this.ensureAlarm();
       return state;
@@ -210,22 +218,38 @@ export class RookwoodTown {
 
     const stored = JSON.parse(rows[0].state_json);
     const previousSeedRevision = Number(stored.seedRevision ?? 0);
+    const historyChanged = migrateStoredEvents(this.sql, previousSeedRevision);
 
     // Keep only a small recent window in memory for the next decision. The
     // full history remains in SQLite and is never sent to the model.
     stored.events = this.readEvents(8).reverse();
 
     const reconciled = reconcileTownWithSeed(stored);
-    const authoredCopyChanged = syncAuthoredResidentCopy(reconciled.state, {
-      refreshRoutineCopy: previousSeedRevision < 4,
-    });
+    const state = reconciled.state;
+    let runtimeChanged = false;
+    if (state.environment !== this.environment) {
+      state.environment = this.environment;
+      runtimeChanged = true;
+    }
+    if (state.mode !== modeFor(this.environment)) {
+      state.mode = modeFor(this.environment);
+      runtimeChanged = true;
+    }
+    if (state.persistence !== "durable-object") {
+      state.persistence = "durable-object";
+      runtimeChanged = true;
+    }
+    if (state.name !== TOWN_DISPLAY_NAME) {
+      state.name = TOWN_DISPLAY_NAME;
+      runtimeChanged = true;
+    }
 
-    if (reconciled.needsPersist || authoredCopyChanged) {
-      this.persist(reconciled.state);
+    if (reconciled.needsPersist || historyChanged || runtimeChanged) {
+      this.persist(state);
     }
 
     await this.ensureAlarm();
-    return reconciled.state;
+    return state;
   }
 
   async fetch(request) {
@@ -246,6 +270,7 @@ export class RookwoodTown {
           eventCount: state.stats.eventCount,
           tickCount: state.stats.tickCount,
           persistence: state.persistence,
+          environment: state.environment,
         });
       }
 
@@ -255,11 +280,13 @@ export class RookwoodTown {
         return json({
           ok: true,
           service: "town-dashboard",
+          name: state.name,
+          environment: state.environment,
           mode: state.mode,
           engine: this.env?.DEEPSEEK_API_KEY ? "hybrid-scripted-deepseek" : "deterministic-scripted",
           modelReady: Boolean(this.env?.DEEPSEEK_API_KEY),
           persistence: state.persistence,
-          object: TOWN_NAME,
+          object: this.storageKey,
           seedRevision: state.seedRevision,
           tickCount: state.stats.tickCount,
           eventCount: state.stats.eventCount,
@@ -282,8 +309,9 @@ export class RookwoodTown {
     }
   }
 
-  async modelPlanFor(state) {
+  async modelPlanFor(state, { wallClock = new Date() } = {}) {
     if (!this.env?.DEEPSEEK_API_KEY) return null;
+    if (isPeakPeriod(wallClock)) return null;
 
     const due = dueWithin(state, MODEL_RESIDENT_ID, SIMULATION_STEP_MINUTES);
     if (!due || !openObligationFor(state, due.resident.id)) return null;
@@ -335,6 +363,9 @@ export class RookwoodTown {
         return scriptedObligationPlan({ town, resident, now });
       },
     });
+    next.environment = this.environment;
+    next.mode = modeFor(this.environment);
+    next.persistence = "durable-object";
     this.persist(next);
     await this.ctx.storage.setAlarm(Date.now() + HEARTBEAT_INTERVAL_MS);
   }
