@@ -52,6 +52,7 @@ export async function smokeDeployment({ url, environment, object, requireModel =
       assertEqual(town.persistence, "durable-object", "town.persistence");
       assertEqual(health.clockPolicy, "pause-on-downtime", "health.clockPolicy");
       assertEqual(health.simulationStepMinutes, 60, "health.simulationStepMinutes");
+      assertEqual(health.lastAlarmStatus, "healthy", "health.lastAlarmStatus");
       if (!health.alarmAt) throw new Error("health.alarmAt was not scheduled");
       if (requireModel) {
         assertEqual(health.modelReady, true, "health.modelReady");

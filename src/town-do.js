@@ -27,6 +27,7 @@ export const MAX_EVENT_LIMIT = 200;
 const MODEL_EVALUATION_KEY_PREFIX = "model-evaluation:";
 const MODEL_DECISION_KEY_PREFIX = "model-decision:";
 const ALARM_ATTEMPT_KEY = "alarm-attempt";
+const ALARM_FAILURE_KEY = "alarm-failure";
 
 export function townEnvironment(env = {}) {
   return env.TOWN_ENV === STAGING_ENVIRONMENT
@@ -300,6 +301,9 @@ export class RookwoodTown {
       if (url.pathname === "/health") {
         const state = await this.load();
         const alarmAt = await this.ensureAlarm();
+        const alarmFailure = typeof this.ctx.storage.get === "function"
+          ? await this.ctx.storage.get(ALARM_FAILURE_KEY)
+          : null;
         const evaluationRevision = this.evaluationRevision();
         const evaluation = await this.readEvaluation(evaluationRevision);
         return json({
@@ -334,6 +338,9 @@ export class RookwoodTown {
           lastHeartbeatRetryCount: state.operations?.lastHeartbeatRetryCount ?? 0,
           lastHeartbeatAdvancedFrom: state.operations?.lastHeartbeatAdvancedFrom ?? null,
           lastHeartbeatAdvancedTo: state.operations?.lastHeartbeatAdvancedTo ?? null,
+          lastAlarmStatus: alarmFailure?.status === "failed" ? "failed" : "healthy",
+          lastAlarmFailureAt: alarmFailure?.status === "failed" ? alarmFailure.failedAt : null,
+          lastAlarmError: alarmFailure?.status === "failed" ? alarmFailure.error : null,
           alarmAt: alarmAt === null ? null : new Date(alarmAt).toISOString(),
           serverTime: new Date().toISOString(),
         });
@@ -415,7 +422,7 @@ export class RookwoodTown {
     return plan;
   }
 
-  async alarm(options = {}) {
+  async runAlarm(options = {}) {
     const wallClock = options.wallClock ?? new Date();
     const retryCount = Number.isSafeInteger(options.retryCount) ? options.retryCount : 0;
     const isRetry = options.isRetry === true || retryCount > 0;
@@ -471,5 +478,31 @@ export class RookwoodTown {
     }
     await this.ctx.storage.setAlarm(new Date(wallClock).getTime() + HEARTBEAT_INTERVAL_MS);
     return { status: "advanced", from: state.now, to: next.now };
+  }
+
+  async alarm(options = {}) {
+    const wallClock = options.wallClock ?? new Date();
+    try {
+      const result = await this.runAlarm({ ...options, wallClock });
+      if (typeof this.ctx.storage.put === "function") {
+        await this.ctx.storage.put(ALARM_FAILURE_KEY, {
+          status: "healthy",
+          recoveredAt: new Date(wallClock).toISOString(),
+        });
+      }
+      return result;
+    } catch (error) {
+      const failure = {
+        status: "failed",
+        failedAt: new Date(wallClock).toISOString(),
+        error: error?.name ?? "AlarmError",
+        retryCount: Number.isSafeInteger(options.retryCount) ? options.retryCount : 0,
+      };
+      if (typeof this.ctx.storage.put === "function") {
+        await this.ctx.storage.put(ALARM_FAILURE_KEY, failure);
+      }
+      await this.ctx.storage.setAlarm(new Date(wallClock).getTime() + HEARTBEAT_INTERVAL_MS);
+      return { ...failure, nextAttemptAt: new Date(new Date(wallClock).getTime() + HEARTBEAT_INTERVAL_MS).toISOString() };
+    }
   }
 }

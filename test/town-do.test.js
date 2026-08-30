@@ -393,7 +393,7 @@ test("an alarm retry after persistence does not advance a second hour", async ()
   assert.equal(health.simulationStepMinutes, 60);
 });
 
-test("a failing alarm leaves Cloudflare's current retry alarm untouched", async () => {
+test("a failing alarm records the fault and schedules a later recovery attempt", async () => {
   const { town, storage } = makeTown();
   const initial = createInitialTown();
   const sal = initial.residents.find(({ id }) => id === "sal");
@@ -405,12 +405,15 @@ test("a failing alarm leaves Cloudflare's current retry alarm untouched", async 
     throw new Error("simulated handler crash");
   };
 
-  await assert.rejects(
-    town.alarm({ wallClock: new Date("2026-08-31T00:00:00.000Z") }),
-    /simulated handler crash/,
-  );
-  assert.equal(storage.alarmAt, null);
+  const result = await town.alarm({ wallClock: new Date("2026-08-31T00:00:00.000Z") });
+  const health = await (await town.fetch(new Request("https://town.internal/health"))).json();
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.error, "Error");
+  assert.equal(storage.alarmAt, Date.parse("2026-08-31T01:00:00.000Z"));
   assert.equal(JSON.parse(storage.sql.stateRow.state_json).now, initial.now);
+  assert.equal(health.lastAlarmStatus, "failed");
+  assert.equal(health.lastAlarmError, "Error");
 });
 
 test("the Worker delegates default API reads to the town object", async () => {

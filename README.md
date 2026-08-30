@@ -144,7 +144,7 @@ Wrangler does not inherit Durable Object bindings into named environments, so pr
 
 A code commit does not automatically reset, publish, or redeploy the town.
 
-Persistent time follows a pause policy. One completed alarm advances one simulated hour; downtime does not produce a burst catch-up. Alarm retries detect an hour that already persisted, and `/api/health` reports the policy, last interval, retry count, persistence identity, environment, and model readiness.
+Persistent time follows a pause policy. One completed alarm advances one simulated hour; downtime does not produce a burst catch-up. Alarm retries detect an hour that already persisted. A caught failure records a health-visible fault and schedules a fresh attempt one hour later rather than exhausting Cloudflare's finite retry budget. `/api/health` reports the policy, last interval, retry/failure state, persistence identity, environment, and model readiness.
 
 ## Repository map
 
