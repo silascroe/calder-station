@@ -89,7 +89,7 @@ The checked-in evaluation matrix runs eight Sal obligation states three times ea
 DEEPSEEK_API_KEY=... npm run evaluate:model
 ```
 
-The staging Worker runs the same fixed 24-case evaluation once per configured revision from a server-side hourly trigger. The report is readable at `/api/evaluation`, but no public route can start, reset, or parameterize paid work.
+The staging Worker runs the same fixed 24-case evaluation once per configured revision from a server-side quarter-hour trigger. The report is readable at `/api/evaluation`, but no public route can start, reset, or parameterize paid work.
 
 Before the first call, staging stores a durable `running` lease. Complete, failed, and interrupted/in-flight revisions are not retried automatically; a deliberate retry requires a new evaluation revision. The town's normal alarm path similarly guards model decisions by their exact simulated planning instant so a Worker retry cannot casually buy the same unknown response twice.
 

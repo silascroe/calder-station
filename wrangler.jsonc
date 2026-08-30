@@ -35,7 +35,7 @@
         "MODEL_EVALUATION_REVISION": "sal-competing-choice-v4-2026-08-30"
       },
       "triggers": {
-        "crons": ["15 * * * *"]
+        "crons": ["*/15 * * * *"]
       },
       "durable_objects": {
         "bindings": [

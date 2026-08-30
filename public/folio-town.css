@@ -100,10 +100,12 @@
 .consequential-event .event-kind { color: var(--folio-coral); }
 .event-row strong { color: var(--folio-ink); font: 400 14px var(--folio-serif); }
 .event-row strong a:hover { color: var(--folio-brass); }
+.event-context { display: block; margin-top: 4px; color: var(--folio-dim); font: italic 10px/1.45 var(--folio-serif); }
 .journal-event-paper { border-color: var(--folio-paper-line); }
 .journal-event-paper .event-time { color: #9c9489; }
 .journal-event-paper p { color: #66625c; }
 .journal-event-paper strong { color: var(--folio-paper-ink); }
+.journal-event-paper .event-context { color: #7d7469; }
 .journal-event-paper .event-marker { background: #9c7650; }
 .journal-event-paper .event-marker-movement, .journal-event-paper .event-marker-observation { background: #6a8292; }
 .journal-event-paper .event-marker-decision { background: #697b60; }

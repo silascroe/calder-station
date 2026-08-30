@@ -27,6 +27,8 @@ Success means a fresh staging Calder Station can run for 90 simulated days, prod
 - DeepSeek's authority is now choice-only: `{obligationId, choice, note}`. It may choose among bounded open commitments when they genuinely compete, while deterministic code composes Sal's full legal day and leaves unattended commitments subject to their deadlines.
 - Persistent history now orders by durable insertion rather than lexical IDs and repairs a stale projection event sequence from SQLite, covering the first concrete year-scale log defect found in the operations audit.
 - `main` now automatically deploys disposable staging after the test gate; production remains manual. This removes the recurring evaluation bottleneck without allowing code pushes to touch canonical production state.
+- The Folio now names the specific commitment chosen by DeepSeek or fallback rules, shows the bounded decision note, and traces follow-up journal entries back to the prior promise without exposing engineering counters.
+- Staging checks its terminal-guarded paid-evaluation revision every 15 minutes so deliberate experiments do not wait nearly an hour; production still has no evaluation trigger.
 - Resident schedules now span the fictional day independently of provider price windows. Persistent operation explicitly pauses on downtime, guards alarm retries against double advancement, and guards exact planning instants against duplicate model spend. The paid evaluator writes a running lease and never auto-retries a failed or interrupted revision.
 - Caught alarm failures are health-visible and schedule a fresh attempt one hour later, so Cloudflare's finite automatic retry budget cannot quietly stop the town forever.
 

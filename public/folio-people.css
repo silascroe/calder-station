@@ -69,6 +69,7 @@
 .paper-history-row > span { color: var(--folio-paper-dim); font: 700 9px var(--folio-mono); }
 .paper-history-row p { margin: 0; color: var(--folio-paper-muted); font-size: 11px; line-height: 1.55; }
 .paper-history-row strong { color: var(--folio-paper-ink); font: 400 14px var(--folio-serif); }
+.paper-history-row p small { display: block; margin-top: 3px; color: var(--folio-paper-dim); font: italic 10px/1.45 var(--folio-serif); }
 .paper-empty { color: var(--folio-paper-muted); font-size: 11px; }
 .dossier-margin-note { position: absolute; left: 36px; bottom: 27px; width: 54%; margin: 0; padding-top: 12px; border-top: 1px solid rgba(101,94,85,.35); color: #7f776d; font: italic 13px var(--folio-serif); }
 .register-stamp { position: absolute; right: 44px; bottom: 28px; display: grid; place-items: center; width: 78px; height: 78px; transform: rotate(-9deg); border: 1px solid rgba(134,96,67,.34); border-radius: 50%; color: rgba(134,96,67,.42); text-align: center; font: italic 11px var(--folio-serif); }

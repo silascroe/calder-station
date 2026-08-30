@@ -39,6 +39,10 @@ function locationById(id) {
   return store.town?.locations.find((location) => location.id === id);
 }
 
+function obligationById(id) {
+  return store.town?.obligations?.find((obligation) => obligation.id === id);
+}
+
 function relationshipsFor(id) {
   return (store.town?.relationships ?? [])
     .filter((relationship) => relationship.fromId === id || relationship.toId === id)
@@ -119,6 +123,15 @@ function eventKind(event) {
   }[event?.type] ?? "ordinary record";
 }
 
+function eventContext(event) {
+  const details = [];
+  const obligation = event?.obligationId ? obligationById(event.obligationId) : null;
+  const parent = obligation?.parentObligationId ? obligationById(obligation.parentObligationId) : null;
+  if (parent) details.push(`Follows ${parent.title}`);
+  if (event?.type === "obligation" && event.reason) details.push(event.reason);
+  return details.join(" · ");
+}
+
 function eventRow(event, { paper = false } = {}) {
   const actorName = eventActor(event);
   const actor = event.actorId
@@ -126,11 +139,12 @@ function eventRow(event, { paper = false } = {}) {
     : escapeHtml(actorName);
   const paperClass = paper ? " journal-event-paper" : "";
   const consequentialClass = isConsequentialEvent(event) ? " consequential-event" : "";
+  const context = eventContext(event);
   return `
     <li class="event-row${paperClass}${consequentialClass}">
       <span class="event-time">${escapeHtml(eventStamp(event))}</span>
       <span class="event-marker event-marker-${escapeHtml(event.type ?? "system")}"></span>
-      <p><small class="event-kind">${escapeHtml(eventKind(event))}</small><strong>${actor}</strong> ${escapeHtml(eventText(event))}</p>
+      <p><small class="event-kind">${escapeHtml(eventKind(event))}</small><strong>${actor}</strong> ${escapeHtml(eventText(event))}${context ? `<span class="event-context">${escapeHtml(context)}</span>` : ""}</p>
     </li>
   `;
 }
@@ -155,12 +169,13 @@ function obligationRow(obligation) {
   const owner = residentById(obligation.ownerId);
   const counterparty = residentById(obligation.counterpartyId);
   const place = locationById(obligation.destinationId);
+  const parent = obligation.parentObligationId ? obligationById(obligation.parentObligationId) : null;
   return `
     <article class="commitment-row">
       <p>${owner ? routeLink(`/residents/${owner.id}`, escapeHtml(owner.name)) : escapeHtml(obligation.ownerId)} <span>owes</span> ${counterparty ? routeLink(`/residents/${counterparty.id}`, escapeHtml(counterparty.name)) : escapeHtml(obligation.counterpartyId)}</p>
       <strong>${escapeHtml(obligation.title)}</strong>
       <small>${escapeHtml(actionLabel(obligation.requiredAction))} · ${escapeHtml(place?.name ?? obligation.destinationId)} · ${escapeHtml(obligationDueLabel(obligation))}</small>
-      ${obligation.parentObligationId ? "<em>Continues an earlier promise</em>" : ""}
+      ${parent ? `<em>Follows ${escapeHtml(parent.title)}</em>` : obligation.parentObligationId ? "<em>Continues an earlier promise</em>" : ""}
     </article>
   `;
 }
@@ -423,10 +438,13 @@ function planSummary(resident) {
     ? residentById(resident.dailyPlan.socialIntentions[0].targetId)
     : null;
   const obligation = openObligationsFor(resident.id)[0];
+  const decision = resident.dailyPlan.obligationDecision;
+  const decidedObligation = decision?.obligationId ? obligationById(decision.obligationId) : null;
+  const decisionAction = decision?.choice === "report_delay" ? "delay" : "fulfill";
   const modelStatus = resident.dailyPlan?.model?.fallback
-    ? "Scripted fallback used"
-    : resident.dailyPlan?.model?.attempted
-      ? "DeepSeek shaped this decision"
+    ? `Scripted fallback chose to ${decisionAction} ${decidedObligation?.title ?? "the commitment"}`
+    : resident.dailyPlan?.model?.attempted && decision
+      ? `DeepSeek chose to ${decisionAction} ${decidedObligation?.title ?? "the commitment"}`
       : null;
 
   return `
@@ -438,6 +456,7 @@ function planSummary(resident) {
       ${socialTarget ? `<small>Wants a word with ${escapeHtml(socialTarget.name)}</small>` : ""}
       ${obligation ? `<small>Next commitment: ${escapeHtml(obligation.title)} · ${escapeHtml(obligationDueLabel(obligation))}</small>` : ""}
       ${modelStatus ? `<small class="plan-source">${escapeHtml(modelStatus)}</small>` : ""}
+      ${decision?.note ? `<small class="plan-note">“${escapeHtml(decision.note)}”</small>` : ""}
     </div>
   `;
 }
@@ -510,7 +529,7 @@ function residentDossier(resident, { compact = false } = {}) {
             ${recentEvents.length ? recentEvents.map((event) => `
               <div class="paper-history-row">
                 <span>${escapeHtml(eventStamp(event))}</span>
-                <p><strong>${escapeHtml(eventActor(event).split(" ")[0])}</strong> ${escapeHtml(eventText(event))}</p>
+                <p><strong>${escapeHtml(eventActor(event).split(" ")[0])}</strong> ${escapeHtml(eventText(event))}${eventContext(event) ? `<small>${escapeHtml(eventContext(event))}</small>` : ""}</p>
               </div>
             `).join("") : "<p class=\"paper-empty\">No recorded events yet.</p>"}
           </div>
