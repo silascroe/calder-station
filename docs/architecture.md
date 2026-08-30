@@ -44,6 +44,14 @@ An LLM response should never be allowed to mutate storage directly. That is how 
 - Record input/output token counts and the reason each model call was made.
 - Reserve a stronger or thinking model for rare high-impact events.
 
+## Viewer direction
+
+The dashboard is a separate read-only window into the simulation. It should consume projections and events; it should not contain world rules or call the model directly.
+
+The first useful surface is deliberately small: a town overview, a resident list, a map-like location view, and a chronological event feed. Client-side routes such as `/map` and `/residents/mara` can exist before the simulation is real by rendering fixture data. This gives the project a visible feedback loop without coupling the UI to unfinished storage.
+
+When the town is remote, the same dashboard can read `/api/town` and `/api/events`. Polling is sufficient for a tiny town. A live stream can be added later without changing the page-level route model.
+
 ## Infrastructure direction
 
 For a small deployment, one coordinator plus durable storage is enough. Residents should be rows or records, not one Durable Object and one workflow per personality by default. Cloudflare adapters can be added after the pure simulation works locally; infrastructure should provide durability and wake-ups, not hide the domain rules.

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="A window into the Town simulation." />
+    <title>Town — Rookwood</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" data-route>
+          <span class="brand-mark">T</span>
+          <span>Town</span>
+        </a>
+        <nav class="nav" aria-label="Primary navigation">
+          <a href="/" data-route data-nav="/">Overview</a>
+          <a href="/map" data-route data-nav="/map">Map</a>
+          <a href="/residents" data-route data-nav="/residents">Residents</a>
+        </nav>
+        <div class="status-chip"><span class="status-dot"></span>Demo state</div>
+      </header>
+
+      <main id="app" aria-live="polite"></main>
+
+      <footer class="footer">
+        <span>ROOKWOOD / FOUNDATION BUILD</span>
+        <span>Read-only window into the world</span>
+      </footer>
+    </div>
+  </body>
+</html>

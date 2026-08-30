@@ -5,6 +5,8 @@
   "description": "A cost-aware persistent multi-agent town simulation.",
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "dev": "npx wrangler dev",
+    "deploy": "npx wrangler deploy"
   }
 }
