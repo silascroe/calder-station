@@ -61,6 +61,13 @@ test("a preview advances the clock and lets each resident make a decision", () =
   assert.ok(town.residents.every((resident) => resident.hunger >= 0 && resident.hunger <= 100));
   assert.ok(decisions.some((event) => event.actorId === "edda"));
   assert.ok(decisions.some((event) => event.actorId === "amos"));
+  assert.equal(town.stats.planCount, 15);
+  assert.equal(town.stats.encounterCount, 3);
+  assert.ok(town.residents.every((resident) => resident.dailyPlan?.action));
+  assert.ok(town.events.some((event) => event.type === "encounter" && event.relatedActorId));
+  assert.equal(town.relationships.find(({ id }) => id === "rel-thom-pella").strength, 75);
+  assert.equal(town.residents.find(({ id }) => id === "thom").lastEncounterWithId, "pella");
+  assert.equal(town.residents.find(({ id }) => id === "pella").lastEncounterWithId, "thom");
 });
 
 test("the second day exercises ordinary meal and rest rules", () => {
@@ -70,6 +77,8 @@ test("the second day exercises ordinary meal and rest rules", () => {
   assert.equal(town.stats.decisionCount, 30);
   assert.ok(decisions.some((event) => event.text.startsWith("stopped to eat")));
   assert.ok(town.residents.some((resident) => resident.lastAction === "rest"));
+  assert.equal(town.stats.planCount, 30);
+  assert.ok(town.stats.encounterCount >= 3);
 });
 
 test("the tiny seed remains available as a compact regression scenario", () => {

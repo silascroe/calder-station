@@ -147,7 +147,7 @@ export class RookwoodTown {
     const stored = JSON.parse(rows[0].state_json);
     stored.events = [];
     const reconciled = reconcileTownWithSeed(stored);
-    if (reconciled.changed) this.persist(reconciled.state);
+    if (reconciled.needsPersist) this.persist(reconciled.state);
     await this.ensureAlarm();
     return reconciled.state;
   }

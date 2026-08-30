@@ -49,6 +49,16 @@ function hourLabel(hour) {
   return `${String(hour).padStart(2, "0")}:00`;
 }
 
+function actionLabel(action) {
+  return {
+    work: "Work",
+    eat: "Eat",
+    rest: "Rest",
+    deliver: "Make deliveries",
+    observe: "Keep watch",
+  }[action] ?? action ?? "No action yet";
+}
+
 function pageHeader(eyebrow, title, description = "") {
   return `
     <header class="page-header">
@@ -150,7 +160,7 @@ function renderOverview() {
 
     <section class="town-ledger" aria-label="Simulation details">
       <span>${town.locations.length} places</span><span>${town.relationships?.length ?? 0} relationships</span>
-      <span>${town.stats.tickCount} hours advanced</span><span>${town.stats.modelCalls} model calls</span>
+      <span>${town.stats.tickCount} hours advanced</span><span>${town.stats.encounterCount ?? 0} encounters</span>
     </section>
   `;
 }
@@ -168,12 +178,12 @@ function locationMarker(location) {
 function renderMap() {
   const { town } = store;
   app.innerHTML = `
-    ${pageHeader("Rookwood / the ground beneath it", "The map", "Fourteen places, three roads, and everyone accounted for.")}
+    ${pageHeader("Rookwood / the ground beneath it", "The map", "A working map of Rookwood, with the town's current occupancy marked.")}
     <section class="map-layout">
       <div class="map-card" aria-label="Map of Rookwood">
         <div class="map-grid"></div><div class="map-road road-one"></div><div class="map-road road-two"></div><div class="map-road road-three"></div>
         ${town.locations.map(locationMarker).join("")}
-        <div class="map-compass">N</div><div class="map-legend"><span class="legend-pin">3</span> people here</div>
+        <div class="map-compass">N</div><div class="map-legend"><span class="legend-pin" aria-hidden="true"></span> occupied place</div>
       </div>
       <aside class="map-note"><p class="eyebrow">Reading the map</p><p>Gold circles show occupied places. The number is how many people are there now; empty places stay as small rings.</p></aside>
     </section>
@@ -205,11 +215,17 @@ function renderResidents() {
 function renderResidentDetail(id) {
   const resident = residentById(id);
   if (!resident) return renderNotFound();
-  const recentEvents = store.events.filter((event) => event.actorId === resident.id || event.actor === resident.name);
+  const recentEvents = store.events.filter((event) => event.actorId === resident.id || event.relatedActorId === resident.id || event.actor === resident.name);
   const relationships = relationshipsFor(id);
   const home = locationById(resident.homeLocationId);
   const work = locationById(resident.workLocationId);
   const routine = resident.routine ?? {};
+  const lastEncounterWith = resident.lastEncounterWithId ? residentById(resident.lastEncounterWithId) : null;
+  const plannedSocialTarget = resident.dailyPlan?.socialIntentions?.[0]?.targetId
+    ? residentById(resident.dailyPlan.socialIntentions[0].targetId)
+    : null;
+  const plannedLocation = resident.dailyPlan?.locationId ? locationById(resident.dailyPlan.locationId) : null;
+  const planAction = resident.dailyPlan?.action ?? resident.dailyPlan?.priorities?.[0];
 
   app.innerHTML = `
     ${pageHeader("One life in Rookwood", resident.name, `${resident.role} · ${resident.location}`)}
@@ -221,6 +237,8 @@ function renderResidentDetail(id) {
           <div><dt>Mood</dt><dd>${escapeHtml(resident.mood)}</dd></div><div><dt>Energy</dt><dd>${escapeHtml(resident.energy)}%</dd></div>
           <div><dt>Hunger</dt><dd>${escapeHtml(resident.hunger)}%</dd></div><div><dt>Current place</dt><dd>${escapeHtml(resident.location)}</dd></div>
           <div><dt>Next decision</dt><dd>${escapeHtml(residentTime(resident.nextDecisionAt))}</dd></div>
+          <div><dt>Social moments</dt><dd>${escapeHtml(resident.socialCount ?? 0)}</dd></div>
+          <div><dt>Last encounter</dt><dd>${escapeHtml(lastEncounterWith?.name ?? "—")}</dd></div>
         </dl>
       </article>
       <div class="resident-story">
@@ -228,6 +246,7 @@ function renderResidentDetail(id) {
           <p class="eyebrow">Ordinary day</p><h2>Home and routine</h2>
           <div class="route-line"><span>${escapeHtml(home?.name ?? resident.homeLocationId)}</span><i></i><span>${escapeHtml(work?.name ?? resident.workLocationId)}</span></div>
           <p>${escapeHtml(resident.name.split(" ")[0])} usually starts work at ${hourLabel(routine.workStart)} and finishes around ${hourLabel(routine.workEnd)}. ${escapeHtml(routine.workReason ?? "The day's work is waiting.")}</p>
+          ${resident.dailyPlan ? `<div class="plan-note"><span>Latest plan</span><strong>${escapeHtml(actionLabel(planAction))}${plannedLocation ? ` at ${escapeHtml(plannedLocation.name)}` : ""}</strong>${resident.dailyPlan.reason ? `<small>${escapeHtml(resident.dailyPlan.reason)}</small>` : ""}${plannedSocialTarget ? `<small>Wants a word with ${escapeHtml(plannedSocialTarget.name)}</small>` : ""}</div>` : `<div class="plan-note"><span>Latest plan</span><strong>No decision yet</strong></div>`}
         </article>
         <article class="connections-card">
           <p class="eyebrow">Known ties</p><h2>Relationships</h2>

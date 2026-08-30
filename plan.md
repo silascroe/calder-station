@@ -62,17 +62,17 @@ Rookwood now has one SQLite-backed object that persists its projection and event
 
 Do not add D1 merely because it is a database. Introduce it when the project has a real need for shared relational queries beyond one town object.
 
-### 3. Introduce a daily-plan interface
+### 3. Introduce a daily-plan interface — landed
 
-Replace the current one-step decision shape with a plan interface that both a scripted planner and a future model planner can satisfy. The scripted planner remains the reference implementation and test oracle.
+`src/daily-plans.js` now defines a versioned, validated plan contract. The scripted planner is the reference implementation and the legacy one-intent adapter remains compatible for tests. Version 1 intentionally executes one action per plan; the shape can grow only when the simulation has a real action queue.
 
 ### 4. Trial one model resident
 
 Give one resident a DeepSeek planner behind a strict schema, token budget, timeout, retry limit, and deterministic fallback. Record call reasons, token usage, rejected intents, and resulting events. Do not let the model mutate storage.
 
-### 5. Add social consequences carefully
+### 5. Add social consequences carefully — first slice landed
 
-Allow plans to create social intentions, then let the deterministic engine decide whether meetings, exchanges, promises, and conflicts actually occur. Add model calls only when the existing daily plans and local rules cannot resolve an important event.
+Plans can create grounded talk intentions. The deterministic resolver only records an encounter when both residents are related, co-located, and not resting; it caps each resident at one encounter per simulated day and nudges the relationship strength upward. Exchanges, promises, conflicts, and richer memory remain future work.
 
 ### 6. Grow the town only when the systems need it
 

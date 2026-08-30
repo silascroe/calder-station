@@ -34,7 +34,7 @@ The local Worker serves the town view and API. With local Durable Object storage
 
 ## Current simulation slice
 
-The current seed contains fifteen residents, fourteen locations, and twenty-seven relationship edges. Each resident has a home, workplace, routine, needs, and a staggered decision slot. Ordinary game rules return an intent, the simulation validates and resolves it, and accepted actions become compact events.
+The current seed contains fifteen residents, fourteen locations, and twenty-seven relationship edges. Each resident has a home, workplace, routine, needs, and a staggered plan slot. The scripted planner returns one bounded daily action plus an optional social intention; the simulation validates and resolves it, and accepted actions or encounters become compact events.
 
 Persisted towns reconcile idempotently with the authored seed. Adding a resident or place updates an existing Rookwood without replacing evolved state or history. Event IDs use the projection's monotonic count, so the town can advance without loading its entire history into memory; viewer reads are capped and newest-first.
 
@@ -55,7 +55,9 @@ The API accepts `ticks` from `0` through `48`. The `tinyTownSeed` remains availa
 - `src/worker.js` — the Cloudflare Worker entry point and API router.
 - `src/town-do.js` — the SQLite-backed town coordinator and alarm heartbeat.
 - `src/simulation.js` — state creation, ticking, event creation, replay, and API projections.
-- `src/scripted-decisions.js` — ordinary rule-based game AI; no model calls.
+- `src/scripted-decisions.js` — ordinary rule-based action policy; no model calls.
+- `src/daily-plans.js` — versioned planner contract and validator.
+- `src/social.js` — deterministic co-location and relationship resolver.
 - `src/demo-data.js` — the fifteen-resident Rookwood seed and compact test seed.
 - `public/` — the static dashboard shell and client-side routes.
 - `test/` — scheduler, simulation, migration, Durable Object, API, and routing tests.
@@ -72,4 +74,4 @@ Run **Deploy Town Dashboard** from the repository's Actions tab. The DeepSeek ke
 
 ## What comes next
 
-The next useful domain slice is not more infrastructure. It is a daily-plan contract that both scripted rules and a future DeepSeek planner can satisfy, followed by deterministic social encounters that can change relationships. D1 remains unnecessary until cross-town queries or administration create a real need for it.
+The next useful domain slice is one model-backed resident behind a strict timeout, token budget, retry limit, and scripted fallback. D1 remains unnecessary until cross-town queries or administration create a real need for it.

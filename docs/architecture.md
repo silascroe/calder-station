@@ -5,17 +5,17 @@ The town should be built as a simulation with an occasional language-model decis
 ## Core loop
 
 1. Advance the world clock and apply deterministic mechanics: schedules, travel, inventory, hunger, wages, and other rules.
-2. Pull events and residents whose next decision time is due.
-3. Ask only eligible residents for a decision. Most residents should not need a model call on most ticks.
-4. Validate the returned intent against the current world state.
-5. Apply the accepted action transactionally and append a compact event.
-6. Update or compact memory, then schedule the resident's next wake-up.
+2. Pull residents whose daily plan time is due.
+3. Ask only eligible residents for a plan. Most residents should not need a model call on most ticks.
+4. Validate the structured plan against the current world state.
+5. Apply the accepted action transactionally, resolve any legal social intention, and append compact events.
+6. Update or compact memory, then schedule the resident's next plan time.
 
 The model returns intent. The simulation remains the authority on what actually happened.
 
 ## Current implementation slice
 
-The repository implements the loop without a model: a fifteen-resident Rookwood advances in hourly ticks, applies need changes, wakes residents at staggered slots, asks a scripted policy for intent, validates the result, and appends events. Fourteen places and twenty-seven relationship edges give the world useful structure, though relationships do not change yet. `runPreview()` remains a deterministic replay tool; the deployed default is persistent and makes zero model calls.
+The repository implements the loop without a model: a fifteen-resident Rookwood advances in hourly ticks, applies need changes, wakes residents at staggered slots, asks a scripted planner for one bounded daily action plus an optional social intention, validates the plan, resolves it, and appends events. Fourteen places and twenty-seven relationship edges give the world useful structure. When two related residents are actually co-located and available, the social resolver records an encounter and slightly strengthens that relationship. `runPreview()` remains a deterministic replay tool; the deployed default is persistent and makes zero model calls.
 
 ## Scheduling policy
 
@@ -38,6 +38,12 @@ Keep these concerns separate:
 
 An LLM response should never be allowed to mutate storage directly. That is how a funny town becomes an expensive bug farm.
 
+## Daily plan contract
+
+`src/daily-plans.js` defines version 1 of the planner boundary. A plan contains the resident and UTC day it belongs to, one finite-vocabulary executable action, short priorities, and at most two grounded social intentions. The current scripted planner is the reference implementation. The executor intentionally accepts one action per plan for now; multi-step plans should not be added until the simulation has a real action queue.
+
+The validator rejects unknown actions, locations, residents, relationships, stale plan days, overlong prose, and unsupported versions before the resolver sees the plan. A future DeepSeek adapter can return the same shape, but it will still pass through this boundary and the deterministic resolver.
+
 ## Durable Object boundary
 
 One SQLite-backed Durable Object, `RookwoodTown`, owns Rookwood's projection, append-only events, and alarm. Residents remain ordinary records; they are not separate Durable Objects. World rules remain in the domain modules rather than the Worker or storage adapter.
@@ -58,7 +64,7 @@ Persisted projections carry a seed revision and reconcile with authored resident
 
 The dashboard is a separate read-only window into the simulation. It should consume projections and events; it should not contain world rules or call the model directly.
 
-The viewer is organized as a town journal rather than an operations dashboard: what is happening now, where people are, who is likely to act next, and what one resident's ordinary life looks like. The map groups occupancy by place instead of overlapping resident markers. Simulation counters remain available but are deliberately secondary.
+The viewer is organized as a town journal rather than an operations dashboard: what is happening now, where people are, who is likely to act next, and what one resident's ordinary life looks like. Encounters appear in the journal, relationship pages show social moments, and the map groups occupancy by place instead of overlapping resident markers. Simulation counters remain available but are deliberately secondary.
 
 The viewer reads `/api/town` and a bounded `/api/events` feed, refreshes once per minute while visible, and contains no world rules. WebSockets would add machinery without improving an hourly simulation and are deferred.
 

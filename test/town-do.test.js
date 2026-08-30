@@ -81,6 +81,12 @@ test("an existing ten-person projection reconciles without replacing evolved sta
   old.relationships = old.relationships.slice(0, 12);
   old.seedRevision = 1;
   old.residents[0].energy = 41;
+  delete old.residents[0].dailyPlan;
+  delete old.residents[0].lastEncounterAt;
+  delete old.residents[0].lastEncounterWithId;
+  delete old.residents[0].socialCount;
+  delete old.stats.planCount;
+  delete old.stats.encounterCount;
   town.persist(old);
 
   const response = await town.fetch(new Request("https://town.internal/state"));
@@ -90,6 +96,7 @@ test("an existing ten-person projection reconciles without replacing evolved sta
   assert.equal(state.locations.length, 14);
   assert.equal(state.relationships.length, 27);
   assert.equal(state.residents.find(({ id }) => id === "mara").energy, 41);
+  assert.equal(state.residents.find(({ id }) => id === "mara").socialCount, 0);
   assert.ok(state.residents.some(({ id }) => id === "edda"));
   assert.equal(state.stats.eventCount, 2);
   assert.equal(storage.sql.eventRows.size, 2);
