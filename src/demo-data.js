@@ -52,13 +52,13 @@ const obligations = [
     ownerId: "sal",
     counterpartyId: "vey",
     destinationId: "town-hall",
-    title: "Vey's sealed notice",
-    description: "A sealed notice from Vey must reach Rookwood Hall before noon, but Sal's ordinary route is already waiting.",
+    title: "Jamie's sealed notice",
+    description: "A sealed notice from Jamie must reach Rookwood Hall before noon, but Sal's ordinary route is already waiting.",
     dueAfterMinutes: 12 * 60,
   },
 ];
 
-export const TOWN_SEED_REVISION = 3;
+export const TOWN_SEED_REVISION = 4;
 
 function resident({
   id,
@@ -131,7 +131,7 @@ export const townSeed = {
   residents: [
     resident({
       id: "mara",
-      name: "Mara Venn",
+      name: "Mara Konstantinidis",
       role: "Baker",
       homeLocationId: "south-cottages",
       workLocationId: "bakery",
@@ -169,7 +169,7 @@ export const townSeed = {
     }),
     resident({
       id: "sal",
-      name: "Sal Orin",
+      name: "Sal D’Amico",
       role: "Courier",
       homeLocationId: "south-cottages",
       workLocationId: "square",
@@ -197,7 +197,7 @@ export const townSeed = {
     }),
     resident({
       id: "irena",
-      name: "Irena Vale",
+      name: "Irena Kaczmarek",
       role: "Shopkeeper",
       homeLocationId: "east-cottages",
       workLocationId: "general-store",
@@ -215,7 +215,7 @@ export const townSeed = {
     }),
     resident({
       id: "thom",
-      name: "Thom Reed",
+      name: "Tom Reed",
       role: "Farmer",
       homeLocationId: "east-cottages",
       workLocationId: "farm",
@@ -235,7 +235,7 @@ export const townSeed = {
     }),
     resident({
       id: "june",
-      name: "June Lark",
+      name: "June Collins",
       role: "Teacher",
       homeLocationId: "hill-houses",
       workLocationId: "schoolhouse",
@@ -255,7 +255,7 @@ export const townSeed = {
     }),
     resident({
       id: "bram",
-      name: "Bram Ash",
+      name: "Ben Carter",
       role: "Carpenter",
       homeLocationId: "hill-houses",
       workLocationId: "workshop",
@@ -294,7 +294,7 @@ export const townSeed = {
     }),
     resident({
       id: "corin",
-      name: "Corin Pike",
+      name: "Corin Price",
       role: "Innkeeper",
       homeLocationId: "hill-houses",
       workLocationId: "inn",
@@ -314,7 +314,7 @@ export const townSeed = {
     }),
     resident({
       id: "pella",
-      name: "Pella Moss",
+      name: "Paula Morris",
       role: "Gardener",
       homeLocationId: "south-cottages",
       workLocationId: "farm",
@@ -334,7 +334,7 @@ export const townSeed = {
     }),
     resident({
       id: "edda",
-      name: "Edda Rusk",
+      name: "Erin Russell",
       role: "Miller",
       homeLocationId: "east-cottages",
       workLocationId: "mill",
@@ -343,7 +343,7 @@ export const townSeed = {
       mood: "Practical",
       workStart: 5,
       workEnd: 14,
-      workReason: "Thom's grain is waiting at the mill",
+      workReason: "Tom's grain is waiting at the mill",
       workStatus: "Setting the millstones",
       workMood: "Intent",
       mealStart: 14,
@@ -361,7 +361,7 @@ export const townSeed = {
     }),
     resident({
       id: "vey",
-      name: "Vey Arlen",
+      name: "Jamie Allen",
       role: "Town clerk",
       homeLocationId: "hill-houses",
       workLocationId: "town-hall",
@@ -388,7 +388,7 @@ export const townSeed = {
     }),
     resident({
       id: "tamsin",
-      name: "Tamsin Fenn",
+      name: "Tamsin Moore",
       role: "Weaver",
       homeLocationId: "south-cottages",
       workLocationId: "weavers-loft",
@@ -409,13 +409,13 @@ export const townSeed = {
       eveningStart: 18,
       eveningEnd: 21,
       eveningLocationId: "inn",
-      eveningReason: "Lio keeps a chair free by the kitchen door",
+      eveningReason: "Leo keeps a chair free by the kitchen door",
       eveningStatus: "Unwinding at the inn",
       eveningMood: "Amused",
     }),
     resident({
       id: "amos",
-      name: "Amos Grey",
+      name: "Amos Foster",
       role: "Night watchman",
       homeLocationId: "east-cottages",
       workLocationId: "square",
@@ -443,7 +443,7 @@ export const townSeed = {
     }),
     resident({
       id: "lio",
-      name: "Lio Pike",
+      name: "Leo Price",
       role: "Inn cook",
       homeLocationId: "hill-houses",
       workLocationId: "inn",
