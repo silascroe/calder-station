@@ -43,7 +43,11 @@ test("the plan boundary rejects invalid actions and ungrounded social requests",
   assert.throws(() => validateDailyPlan({
     ...plan,
     socialIntentions: [{ type: "talk", targetId: "pella", locationId: "square" }],
-  }, { town, resident, now }), /must match the plan action location/);
+  }, { town, resident, now }), /must match.*plan action/);
+  assert.throws(() => validateDailyPlan({
+    ...plan,
+    socialIntentions: [{ type: "talk", targetId: "pella", locationId: "farm", actionIndex: 99 }],
+  }, { town, resident, now }), /action index is outside/);
 });
 
 test("the plan boundary validates effective queue offsets, including omitted offsets", () => {

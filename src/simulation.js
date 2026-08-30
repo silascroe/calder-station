@@ -400,9 +400,9 @@ function queueEntryFor(resident, plan, action, sequence, planAt) {
       mood: action.mood,
     },
     source: plan.source,
-    socialIntentions: sequence === 0
-      ? plan.socialIntentions.map((intention) => ({ ...intention }))
-      : [],
+    socialIntentions: plan.socialIntentions
+      .filter((intention) => (intention.actionIndex ?? 0) === sequence)
+      .map((intention) => ({ ...intention })),
     obligationDecision: sequence === 0 && plan.obligationDecision
       ? { ...plan.obligationDecision }
       : null,

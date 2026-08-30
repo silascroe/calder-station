@@ -86,9 +86,14 @@ function dailyPatternDiagnostics(state) {
 
 function relationshipDynamics(initial, state) {
   const initialById = new Map(initial.relationships.map((relationship) => [relationship.id, relationship]));
-  const encountered = new Set(
+  const sociallyEncountered = new Set(
     (state.events ?? [])
       .filter(({ type, relationshipId }) => type === "encounter" && relationshipId)
+      .map(({ relationshipId }) => relationshipId),
+  );
+  const causallyActive = new Set(
+    (state.events ?? [])
+      .filter(({ type, relationshipId }) => ["encounter", "obligation"].includes(type) && relationshipId)
       .map(({ relationshipId }) => relationshipId),
   );
   const directions = { increased: 0, decreased: 0, unchanged: 0 };
@@ -120,8 +125,10 @@ function relationshipDynamics(initial, state) {
   return {
     ...directions,
     total: state.relationships.length,
-    encounteredCount: encountered.size,
-    unencounteredIds: state.relationships.filter(({ id }) => !encountered.has(id)).map(({ id }) => id),
+    encounteredCount: sociallyEncountered.size,
+    unencounteredIds: state.relationships.filter(({ id }) => !sociallyEncountered.has(id)).map(({ id }) => id),
+    causallyActiveCount: causallyActive.size,
+    inactiveIds: state.relationships.filter(({ id }) => !causallyActive.has(id)).map(({ id }) => id),
     saturated,
     strained,
     maxTension: Math.max(0, ...state.relationships.map(({ tension = 0 }) => tension)),

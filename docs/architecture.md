@@ -24,11 +24,13 @@ Relationships retain their authored baseline plus evolving strength, tension, in
 
 ## Plan and action boundaries
 
-`src/daily-plans.js` defines version 2 of the planner contract. A plan contains short priorities and one to five ordered action intentions. Each action has a finite action vocabulary, a known location, short UI text, and an optional offset from the planning turn. The executor converts those offsets into queue entries and owns the clock.
+`src/daily-plans.js` defines version 2 of the planner contract. A plan contains short priorities and one to five ordered action intentions. Each action has a finite action vocabulary, a known location, short UI text, and an optional offset from the planning turn. A social intention may point at one action in that finite queue; the executor converts offsets into queue entries and owns the clock.
 
 The validator rejects unknown actions, locations, residents, relationships, stale plan days, overlong prose, unavailable obligations, non-monotonic offsets, and unsupported versions. The DeepSeek adapter currently returns one action because its experiment is still limited to a single commitment decision; it crosses the same validator and executor as scripted intent.
 
 If a queued action is no longer reasonable because of a hard need, deterministic code replaces it with eating or rest and records the interruption. If a new planning turn arrives with unfinished intentions, the old remainder is explicitly superseded. There is no hidden resident process and no model-managed clock.
+
+Scripted planners first use naturally shared destinations. For a relationship with no recorded encounter or unresolved tension, they may add one bounded call at the other resident's ordinary workplace, meal stop, or evening place when time and queue capacity permit. Co-location, wakefulness, and daily encounter limits still decide whether the call succeeds. The planner proposes a visit; it never moves the target.
 
 ## State and persistence
 
@@ -59,7 +61,7 @@ Each report includes:
 - model attempts, successful calls, fallbacks, and token totals;
 - min/max energy and hunger over the whole run;
 - duplicate IDs, invalid references, overdue open commitments, due queue entries, need bounds, and obvious rest/no-activity loops.
-- repeated per-resident daily patterns, event-template concentration, relationship direction/saturation, social-edge coverage, personal meaningful-history counts, and resident participation by place.
+- repeated per-resident daily patterns, event-template concentration, relationship direction/saturation, social encounter coverage, any-causal-activity coverage, personal meaningful-history counts, and resident participation by place.
 
 The seed, start time, authored rules, and deterministic adapter make a replay comparable across code changes. Reports contain no wall-clock timestamps or random values.
 

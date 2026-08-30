@@ -46,7 +46,16 @@ function relationshipFor(town, residentId, otherId) {
   ));
 }
 
-function socialIntentionsFor(town, resident, action) {
+function stableHash(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function socialCandidates(town, resident) {
   const candidates = (town.relationships ?? [])
     .filter((relationship) => relationship.fromId === resident.id || relationship.toId === resident.id)
     .map((relationship) => {
@@ -61,17 +70,86 @@ function socialIntentionsFor(town, resident, action) {
       || left.target.id.localeCompare(right.target.id)
     ));
 
-  const preferred = candidates.find(({ target }) => (
-    target.locationId === action.locationId || target.workLocationId === action.locationId
-  )) ?? candidates[0];
-  if (!preferred) return [];
+  return candidates;
+}
+
+function socialIntentionsFor(town, resident, actions, now) {
+  const candidates = socialCandidates(town, resident);
+  const dayOrdinal = Math.floor(new Date(now).getTime() / (24 * 60 * 60 * 1000));
+  const leastSeen = candidates[0];
+  const needsIntroduction = (leastSeen?.relationship.interactionCount ?? 0) === 0;
+  const needsRepair = (leastSeen?.relationship.tension ?? 0) >= 8;
+  const socialDay = (dayOrdinal + stableHash(resident.id)) % 7 === 0;
+
+  for (const { relationship, target } of candidates) {
+    const actionIndex = actions.findIndex((action) => (
+      action.action !== "rest"
+      && (target.locationId === action.locationId || target.workLocationId === action.locationId)
+    ));
+    if (actionIndex === -1) continue;
+    return [{
+      type: "talk",
+      targetId: target.id,
+      actionIndex,
+      locationId: actions[actionIndex].locationId,
+      relationship: relationship.kind,
+      reason: `would like a word with ${target.name}`,
+    }];
+  }
+
+  if (!leastSeen || actions.length >= MAX_PLAN_ACTIONS || (!needsIntroduction && !needsRepair && !socialDay)) {
+    return [];
+  }
+
+  const routine = leastSeen.target.routine ?? {};
+  const possibleCalls = [
+    {
+      hour: Number.isFinite(routine.workStart) && Number.isFinite(routine.workEnd)
+        ? (routine.workStart + routine.workEnd) / 2
+        : null,
+      locationId: leastSeen.target.workLocationId,
+    },
+    {
+      hour: Number.isFinite(routine.mealStart) && Number.isFinite(routine.mealEnd)
+        ? (routine.mealStart + routine.mealEnd) / 2
+        : null,
+      locationId: routine.mealLocationId ?? leastSeen.target.workLocationId,
+    },
+    {
+      hour: Number.isFinite(routine.eveningStart) && Number.isFinite(routine.eveningEnd)
+        ? (routine.eveningStart + routine.eveningEnd) / 2
+        : null,
+      locationId: routine.eveningLocationId,
+    },
+  ].map((candidate) => ({
+    ...candidate,
+    offsetMinutes: offsetFromHour(now, candidate.hour),
+  })).filter((candidate) => candidate.locationId && candidate.offsetMinutes !== null);
+
+  const call = possibleCalls.sort((left, right) => left.offsetMinutes - right.offsetMinutes)[0];
+  if (!call) return [];
+
+  const visit = routineAction({
+    action: "observe",
+    locationId: call.locationId,
+    offsetMinutes: call.offsetMinutes,
+    reason: `hoping to catch ${leastSeen.target.name}`,
+    status: `Calling on ${leastSeen.target.name}`,
+    mood: needsRepair ? "Uneasy" : "Curious",
+  });
+  actions.push(visit);
+  actions.sort((left, right) => left.offsetMinutes - right.offsetMinutes);
+  const actionIndex = actions.indexOf(visit);
 
   return [{
     type: "talk",
-    targetId: preferred.target.id,
-    locationId: action.locationId,
-    relationship: preferred.relationship.kind,
-    reason: `would like a word with ${preferred.target.name}`,
+    targetId: leastSeen.target.id,
+    actionIndex,
+    locationId: visit.locationId,
+    relationship: leastSeen.relationship.kind,
+    reason: needsRepair
+      ? `wants to clear the air with ${leastSeen.target.name}`
+      : `is making time to call on ${leastSeen.target.name}`,
   }];
 }
 
@@ -137,6 +215,7 @@ export function scriptedDailyPlan({ town, resident, now } = {}) {
   });
 
   actions.sort((left, right) => left.offsetMinutes - right.offsetMinutes);
+  const socialIntentions = socialIntentionsFor(town, resident, actions, now);
   return {
     version: DAILY_PLAN_VERSION,
     residentId: resident.id,
@@ -144,7 +223,7 @@ export function scriptedDailyPlan({ town, resident, now } = {}) {
     source: "scripted",
     priorities: [actions[0].action, "complete the ordinary route", "remain available to local ties"],
     actions,
-    socialIntentions: socialIntentionsFor(town, resident, actions[0]),
+    socialIntentions,
   };
 }
 
@@ -192,7 +271,6 @@ export function validateDailyPlan(plan, { town, resident, now } = {}) {
   if (offsets.some((offset, index) => index > 0 && offset < offsets[index - 1])) {
     throw new RangeError("Daily plan action offsets must be non-decreasing");
   }
-  const actionLocationId = plan.actions[0].locationId;
   if (!Array.isArray(plan.socialIntentions) || plan.socialIntentions.length > 2) {
     throw new RangeError("Daily plan may contain at most 2 social intentions");
   }
@@ -206,8 +284,12 @@ export function validateDailyPlan(plan, { town, resident, now } = {}) {
     if (typeof intention.locationId !== "string" || !town.locations.some(({ id }) => id === intention.locationId)) {
       throw new RangeError("Social intention targets an unknown location");
     }
-    if (intention.locationId !== actionLocationId) {
-      throw new RangeError("Social intention location must match the plan action location");
+    const actionIndex = intention.actionIndex ?? 0;
+    if (!Number.isInteger(actionIndex) || actionIndex < 0 || actionIndex >= plan.actions.length) {
+      throw new RangeError("Social intention action index is outside the plan queue");
+    }
+    if (intention.locationId !== plan.actions[actionIndex].locationId) {
+      throw new RangeError("Social intention location must match its queued plan action");
     }
     if (!relationshipFor(town, resident.id, intention.targetId)) {
       throw new RangeError("Social intention has no recorded relationship");

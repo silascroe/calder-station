@@ -38,6 +38,8 @@ test("the staging runner reports useful 1, 7, 30, and 90 day checkpoints", async
   assert.equal(final.longHorizon.relationshipDynamics.total, 27);
   assert.equal(final.longHorizon.relationshipDynamics.saturated.length, 0);
   assert.ok(final.longHorizon.relationshipDynamics.decreased > 0);
+  assert.ok(final.longHorizon.relationshipDynamics.causallyActiveCount >= final.longHorizon.relationshipDynamics.encounteredCount);
+  assert.ok(final.longHorizon.relationshipDynamics.inactiveIds.length <= 2);
   assert.ok(final.longHorizon.eventDiversity.topTenShare > 0);
   assert.equal(Object.keys(final.longHorizon.dailyPatterns).length, 15);
   assert.equal(Object.keys(final.longHorizon.personalHistories).length, 15);

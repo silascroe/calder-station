@@ -62,6 +62,8 @@ A planning turn produces a short ordered plan of at most five actions. The execu
 
 Resident turns span the whole simulated day. DeepSeek pricing windows apply only to the real request clock; the fictional town does not rearrange its lives around an API invoice.
 
+Social intent can attach to any action in that bounded queue. Residents usually meet through shared routines; when a tie has never become active or carries tension, ordinary rules may schedule one call at a plausible workplace or meal stop. The visit can still fail if the other person is absent, asleep, or pulled away by need.
+
 Four small civic chains now carry consequences across existing lives and places: clinic repair → school visit → hall record; flour → bread → inn account; dye bundle → loom repair → workshop parts; and route report → closing round. A fulfilled step schedules its follow-up, a delay retries later, and a broken promise ends that cycle before a cooldown. Sal's route report can overlap the clerk's notice, giving the bounded model experiment an actual competing commitment rather than a cost-free “be helpful” button.
 
 There is no hidden resident process and no model-managed clock.
@@ -77,7 +79,7 @@ npm run scenario -- --days 1,7,30,90
 npm run scenario -- --days 90 --seed another-replay --json
 ```
 
-Reports track event volume, resident plans and actions, relationship changes, commitment outcomes and generations, activity by place, model attempts and fallbacks, token use, need ranges, queue state, and invariant failures. They also measure exact event-template concentration, repeated daily action patterns, relationship saturation and encounter coverage, per-resident meaningful history, and participation by place. Runs are seedable and replayable so rule changes can be compared without inventing a second fake simulation for testing.
+Reports track event volume, resident plans and actions, relationship changes, commitment outcomes and generations, activity by place, model attempts and fallbacks, token use, need ranges, queue state, and invariant failures. They also measure exact event-template concentration, repeated daily action patterns, relationship saturation, conversation coverage versus broader causal relationship activity, per-resident meaningful history, and participation by place. Runs are seedable and replayable so rule changes can be compared without inventing a second fake simulation for testing.
 
 Normal CI and the default scenario command remain deterministic and make no paid calls. Deliberate model evaluation uses the same runner with an asynchronous DeepSeek adapter and an explicit pricing-policy bypass; it is never a browser-accessible mode.
 
