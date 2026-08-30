@@ -62,6 +62,10 @@ The adapter is eligible only for the current Sal commitment experiment. It recei
 
 Provider pricing policy uses injected real wall-clock time. Calder Station's simulated date never determines whether a call is peak-priced. Routine autonomous calls are skipped during DeepSeek's published weekday 01:00–04:00 and 06:00–10:00 UTC peak windows; deliberate evaluation has an explicit bypass. Time injection keeps normal tests independent of the actual hour. As verified on 2026-08-30, `deepseek-v4-flash` is $0.22/M cache-miss input and $0.66/M output tokens off-peak, with peak rates twice those amounts.
 
+`src/hybrid-planner.js` is the single scripted/model selection boundary used by both the persistent object and evaluation. The paid evaluation matrix creates fresh staging states, varies needs, distance, trust, and deadline pressure, then advances each through `advanceTown`. It records both model intent and the executed obligation outcome, which exposes cases where deterministic need interruption legitimately defeats a valid proposal.
+
+Staging has a fixed evaluation revision and a server-side Cron trigger. The trigger checks a report stored in the staging town object's SQLite-backed KV storage and runs the 24-case matrix only when that revision is incomplete. Production declares no evaluation trigger. The public staging API can read the report but cannot trigger, reset, or configure paid calls. Because Worker secrets are environment-specific, staging requires its own `DEEPSEEK_API_KEY`; post-deploy smoke verification requires `modelReady: true`.
+
 Routine mechanics remain scripted. More model-eligible incident classes should wait until the first one is easy to explain from the event history and long-horizon reports.
 
 ## Viewer

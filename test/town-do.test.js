@@ -51,10 +51,12 @@ class FakeSql {
 }
 
 class FakeStorage {
-  constructor() { this.sql = new FakeSql(); this.alarmAt = null; }
+  constructor() { this.sql = new FakeSql(); this.alarmAt = null; this.values = new Map(); }
   transactionSync(callback) { return callback(); }
   async getAlarm() { return this.alarmAt; }
   async setAlarm(at) { this.alarmAt = at; }
+  async get(key) { return this.values.get(key); }
+  async put(key, value) { this.values.set(key, value); }
 }
 
 class FakeContext {
@@ -274,6 +276,30 @@ test("staging uses a separate durable-object storage key and mode", async () => 
   assert.equal(state.environment, "staging");
   assert.equal(state.mode, "staging-persistent-simulation");
   assert.equal(storage.sql.stateRow.id, "rookwood-staging");
+});
+
+test("staging persists a bounded model evaluation report outside the town projection", async () => {
+  const { town, storage } = makeTown({
+    TOWN_ENV: "staging",
+    MODEL_EVALUATION_REVISION: "evaluation-test",
+  });
+  const report = {
+    kind: "calder-station-model-evaluation",
+    revision: "evaluation-test",
+    status: "complete",
+    calls: 8,
+  };
+  const stored = await town.fetch(new Request("https://town.internal/evaluation", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(report),
+  }));
+  const read = await town.fetch(new Request("https://town.internal/evaluation"));
+
+  assert.equal(stored.status, 200);
+  assert.deepEqual(await read.json(), report);
+  assert.deepEqual(storage.values.get("model-evaluation:evaluation-test"), report);
+  assert.equal(storage.sql.stateRow, null);
 });
 
 test("alarms advance from the projection without loading the entire event log", async () => {

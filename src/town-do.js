@@ -11,16 +11,7 @@ import {
   reconcileTownWithSeed,
   townView,
 } from "./simulation.js";
-import {
-  openObligationFor,
-  scriptedObligationPlan,
-} from "./obligations.js";
-import { modelCallPolicy } from "./scheduler.js";
-import {
-  createDeepSeekPlan,
-  DEFAULT_DEEPSEEK_MODEL,
-  MODEL_RESIDENT_ID,
-} from "./deepseek-planner.js";
+import { planResidentDecision } from "./hybrid-planner.js";
 
 // Keep the exported name and production key stable. Renaming the public town
 // must not strand the existing production Durable Object behind a new object
@@ -32,6 +23,7 @@ export const SIMULATION_STEP_MINUTES = 60;
 export const HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000;
 export const DEFAULT_EVENT_LIMIT = 80;
 export const MAX_EVENT_LIMIT = 200;
+const MODEL_EVALUATION_KEY_PREFIX = "model-evaluation:";
 
 export function townEnvironment(env = {}) {
   return env.TOWN_ENV === STAGING_ENVIRONMENT
@@ -177,6 +169,28 @@ export class RookwoodTown {
     return nextAlarm;
   }
 
+  evaluationRevision() {
+    return this.environment === STAGING_ENVIRONMENT
+      ? this.env?.MODEL_EVALUATION_REVISION ?? null
+      : null;
+  }
+
+  async readEvaluation(revision = this.evaluationRevision()) {
+    if (!revision || typeof this.ctx.storage.get !== "function") return null;
+    return await this.ctx.storage.get(`${MODEL_EVALUATION_KEY_PREFIX}${revision}`) ?? null;
+  }
+
+  async writeEvaluation(report) {
+    const revision = this.evaluationRevision();
+    if (!revision || report?.revision !== revision) {
+      throw new RangeError("Evaluation revision does not match the staging configuration");
+    }
+    if (typeof this.ctx.storage.put !== "function") {
+      throw new TypeError("Durable Object storage cannot persist evaluation reports");
+    }
+    await this.ctx.storage.put(`${MODEL_EVALUATION_KEY_PREFIX}${revision}`, clone(report));
+  }
+
   readEvents(limit = DEFAULT_EVENT_LIMIT) {
     return this.sql
       .exec(
@@ -243,11 +257,27 @@ export class RookwoodTown {
   }
 
   async fetch(request) {
+    const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname === "/evaluation") {
+      if (this.environment !== STAGING_ENVIRONMENT) {
+        return json({ error: "Model evaluation storage exists only in staging." }, 404);
+      }
+      try {
+        const report = await request.json();
+        await this.writeEvaluation(report);
+        return json({ ok: true, revision: report.revision, status: report.status });
+      } catch (error) {
+        if (error instanceof RangeError || error instanceof TypeError || error instanceof SyntaxError) {
+          return json({ error: error.message }, 400);
+        }
+        throw error;
+      }
+    }
+
     if (request.method !== "GET") {
       return json({ error: "Only GET is supported by the town object." }, 405);
     }
 
-    const url = new URL(request.url);
     try {
       if (url.pathname === "/state") {
         return json(townView(await this.load()));
@@ -267,6 +297,8 @@ export class RookwoodTown {
       if (url.pathname === "/health") {
         const state = await this.load();
         const alarmAt = await this.ensureAlarm();
+        const evaluationRevision = this.evaluationRevision();
+        const evaluation = await this.readEvaluation(evaluationRevision);
         return json({
           ok: true,
           service: "town-dashboard",
@@ -286,8 +318,26 @@ export class RookwoodTown {
           modelCostSkips: state.stats.modelCostSkips,
           modelPromptTokens: state.stats.modelPromptTokens,
           modelCompletionTokens: state.stats.modelCompletionTokens,
+          modelPromptCacheHitTokens: state.stats.modelPromptCacheHitTokens,
+          modelPromptCacheMissTokens: state.stats.modelPromptCacheMissTokens,
+          evaluationRevision,
+          evaluationStatus: evaluation?.status
+            ?? (evaluationRevision && !this.env?.DEEPSEEK_API_KEY ? "blocked-missing-key" : evaluationRevision ? "pending" : null),
           alarmAt: alarmAt === null ? null : new Date(alarmAt).toISOString(),
           serverTime: new Date().toISOString(),
+        });
+      }
+
+      if (url.pathname === "/evaluation") {
+        if (this.environment !== STAGING_ENVIRONMENT) {
+          return json({ error: "Model evaluation reports exist only in staging." }, 404);
+        }
+        const revision = this.evaluationRevision();
+        const report = await this.readEvaluation(revision);
+        return json(report ?? {
+          kind: "calder-station-model-evaluation",
+          revision,
+          status: this.env?.DEEPSEEK_API_KEY ? "pending" : "blocked-missing-key",
         });
       }
 
@@ -304,48 +354,11 @@ export class RookwoodTown {
     wallClock = new Date(),
     bypassPeakPricing = false,
   } = {}) {
-    const scripted = () => scriptedObligationPlan({ town, resident, now });
-    if (!this.env?.DEEPSEEK_API_KEY || resident.id !== MODEL_RESIDENT_ID) return scripted();
-
-    const obligation = openObligationFor(town, resident.id);
-    if (!obligation) return scripted();
-
-    const policy = modelCallPolicy({ wallClock, bypassPeakPricing });
-    if (!policy.allowed) {
-      return {
-        ...scripted(),
-        modelTelemetry: {
-          attempted: false,
-          fallback: false,
-          skipped: true,
-          policyReason: policy.reason,
-          model: this.env.DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL,
-        },
-      };
-    }
-
-    try {
-      const plan = await createDeepSeekPlan({
-        state: town,
-        resident,
-        now,
-        obligation,
-        env: this.env,
-        fetchImpl: this.env.DEEPSEEK_FETCH ?? globalThis.fetch,
-      });
-      return plan;
-    } catch (error) {
-      return {
-        ...scripted(),
-        modelTelemetry: {
-          attempted: true,
-          fallback: true,
-          model: this.env.DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL,
-          ...(error.telemetry ?? {}),
-          errorCode: error.code ?? "request_failed",
-        },
-      };
-    }
+    return planResidentDecision({ town, resident, now }, {
+      env: this.env,
+      wallClock,
+      bypassPeakPricing,
+    });
   }
 
   async alarm({ wallClock = new Date() } = {}) {

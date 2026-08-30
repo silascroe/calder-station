@@ -186,6 +186,8 @@ function responseTelemetry(payload, requestedModel) {
     requestId: payload?.id ?? null,
     promptTokens: integerOrZero(usage.prompt_tokens),
     completionTokens: integerOrZero(usage.completion_tokens),
+    promptCacheHitTokens: integerOrZero(usage.prompt_cache_hit_tokens),
+    promptCacheMissTokens: integerOrZero(usage.prompt_cache_miss_tokens),
     totalTokens: Number.isSafeInteger(usage.total_tokens) && usage.total_tokens >= 0
       ? usage.total_tokens
       : null,

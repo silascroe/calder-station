@@ -12,6 +12,8 @@ test("production and staging declare isolated persistent bindings", () => {
   assert.equal(result.productionWorker, "town-dashboard");
   assert.equal(result.stagingWorker, "town-dashboard-staging");
   assert.equal(result.durableObjectClass, "RookwoodTown");
+  assert.equal(config.env.staging.triggers.crons.length, 1);
+  assert.ok(config.env.staging.vars.MODEL_EVALUATION_REVISION);
 });
 
 test("a configured environment cannot masquerade as an ephemeral town without TOWN", async () => {

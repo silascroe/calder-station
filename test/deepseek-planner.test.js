@@ -39,6 +39,8 @@ function payload(content, overrides = {}) {
       prompt_tokens: 420,
       completion_tokens: 96,
       total_tokens: 516,
+      prompt_cache_hit_tokens: 120,
+      prompt_cache_miss_tokens: 300,
     },
     ...overrides,
   };
@@ -85,6 +87,8 @@ test("the DeepSeek adapter sends a bounded JSON decision request", async () => {
   assert.equal(plan.obligationDecision.choice, "fulfill");
   assert.equal(plan.modelTelemetry.promptTokens, 420);
   assert.equal(plan.modelTelemetry.completionTokens, 96);
+  assert.equal(plan.modelTelemetry.promptCacheHitTokens, 120);
+  assert.equal(plan.modelTelemetry.promptCacheMissTokens, 300);
   assert.equal(plan.modelTelemetry.requestId, "chatcmpl-calder-test");
 });
 

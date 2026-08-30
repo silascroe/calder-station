@@ -50,7 +50,7 @@ jobs:
       - name: Verify persistent staging Worker
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
-        run: npm run smoke:deploy -- --url "$DEPLOYMENT_URL" --environment staging --object rookwood-staging
+        run: npm run smoke:deploy -- --url "$DEPLOYMENT_URL" --environment staging --object rookwood-staging --require-model
 
   deploy-production:
     if: ${{ inputs.environment == 'production' }}

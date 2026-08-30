@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import worker from "../src/worker.js";
+import worker, { runScheduledModelEvaluation } from "../src/worker.js";
 
 function assets() {
   return {
@@ -99,4 +99,40 @@ test("event limits are validated and applied", async () => {
 
   assert.equal((await limited.json()).events.length, 3);
   assert.equal(invalid.status, 400);
+});
+
+test("staging exposes a read-only evaluation report without a public trigger", async () => {
+  const report = { revision: "evaluation-test", status: "complete", calls: 24 };
+  const stub = { fetch: async () => new Response(JSON.stringify(report)) };
+  const env = {
+    TOWN_ENV: "staging",
+    TOWN: { getByName: () => stub },
+    ASSETS: assets(),
+  };
+  const response = await worker.fetch(new Request("https://town.example/api/evaluation"), env);
+  const mutation = await worker.fetch(new Request("https://town.example/api/evaluation", { method: "POST" }), env);
+
+  assert.deepEqual(await response.json(), report);
+  assert.equal(mutation.status, 405);
+});
+
+test("the scheduled evaluator is staging-only and idempotent after completion", async () => {
+  let reads = 0;
+  const report = { revision: "evaluation-test", status: "complete", calls: 24 };
+  const env = {
+    TOWN_ENV: "staging",
+    MODEL_EVALUATION_REVISION: "evaluation-test",
+    TOWN: {
+      getByName: () => ({
+        fetch: async () => {
+          reads += 1;
+          return new Response(JSON.stringify(report));
+        },
+      }),
+    },
+  };
+
+  assert.deepEqual(await runScheduledModelEvaluation(env), report);
+  assert.equal(reads, 1);
+  assert.deepEqual(await runScheduledModelEvaluation({ TOWN_ENV: "production" }), { status: "skipped-non-staging" });
 });

@@ -19,6 +19,8 @@ Success means a fresh staging Calder Station can run for 90 simulated days, prod
 - The deterministic baseline is stable but repetitive. At Day 90 it produces 6,176 events and healthy bounds, but most residents have only 7–11 distinct daily action signatures, relationship change is entirely net-positive, social activity reaches only 13 of 27 ties, and one Sal/Jamie series accounts for 56 near-identical commitments.
 - The simulation and long-horizon runner now share an asynchronous planner boundary. Model intent is requested at the exact authoritative planning instant rather than prefetched from state at the beginning of an hourly alarm. Deterministic CI remains no-cost; deliberate paid staging evaluation is the next evidence layer.
 - Current DeepSeek documentation lists weekday peak windows at 01:00–04:00 and 06:00–10:00 UTC, with off-peak pricing at half the peak rate. Scheduled production calls should retain that policy; deliberate evaluation needs an explicit bypass.
+- A fixed 24-case paid evaluation matrix now uses the same authoritative planner, validator, queue, and executor as the town. It varies needs, location, trust, and deadline pressure, records intent versus executed outcome, and estimates cost from cache-aware token usage. Staging runs each revision once from a server-side schedule; no public route can initiate paid work.
+- This workspace has no DeepSeek or Cloudflare credential. Production health confirms its Worker has a model secret, but Cloudflare secrets are not inherited by staging. Genuine results remain blocked until the staging secret is configured and the corrected staging build is deployed.
 
 ## What is deliberately true now
 
@@ -29,7 +31,7 @@ The action queue is intentionally finite: each plan has at most five actions, ea
 ## Next useful work
 
 1. Redeploy and verify persistent staging without touching production state.
-2. Redeploy staging and run enough genuine DeepSeek cases to measure validity, choice distribution, token use, cost, and sensitivity to changed circumstances.
+2. Configure the staging-only DeepSeek secret, redeploy staging, and collect the fixed genuine evaluation report.
 3. Replace the mechanical notice conveyor with the smallest conflict/resource mechanics that create explainable positive and negative downstream consequences.
 4. Expose meaningful longitudinal changes through the Folio rather than adding internal counters to the public surface.
 

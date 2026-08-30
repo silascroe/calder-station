@@ -103,6 +103,8 @@ function defaultStats() {
     modelCostSkips: 0,
     modelPromptTokens: 0,
     modelCompletionTokens: 0,
+    modelPromptCacheHitTokens: 0,
+    modelPromptCacheMissTokens: 0,
     eventCount: 0,
     encounterCount: 0,
     obligationCreatedCount: 0,
@@ -349,6 +351,12 @@ function recordPlanTelemetry(state, resident, plan, planAt) {
   state.stats.modelAttempts += 1;
   state.stats.modelPromptTokens += promptTokens;
   state.stats.modelCompletionTokens += completionTokens;
+  state.stats.modelPromptCacheHitTokens += Number.isSafeInteger(telemetry.promptCacheHitTokens)
+    ? telemetry.promptCacheHitTokens
+    : 0;
+  state.stats.modelPromptCacheMissTokens += Number.isSafeInteger(telemetry.promptCacheMissTokens)
+    ? telemetry.promptCacheMissTokens
+    : 0;
   if (telemetry.fallback) {
     state.stats.modelFallbacks += 1;
     appendEvent(state, {
@@ -451,6 +459,8 @@ async function executePlan(state, resident, decisionAdapter, planAt) {
       requestId: telemetry.requestId ?? null,
       promptTokens,
       completionTokens,
+      promptCacheHitTokens: telemetry.promptCacheHitTokens ?? 0,
+      promptCacheMissTokens: telemetry.promptCacheMissTokens ?? 0,
       totalTokens: telemetry.totalTokens ?? null,
       errorCode: telemetry.errorCode ?? null,
     } : null,

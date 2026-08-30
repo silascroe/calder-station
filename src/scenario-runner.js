@@ -269,6 +269,8 @@ export function summarizeScenario(initial, state, extremes) {
       fallbacks: state.stats.modelFallbacks ?? 0,
       promptTokens: state.stats.modelPromptTokens ?? 0,
       completionTokens: state.stats.modelCompletionTokens ?? 0,
+      promptCacheHitTokens: state.stats.modelPromptCacheHitTokens ?? 0,
+      promptCacheMissTokens: state.stats.modelPromptCacheMissTokens ?? 0,
     },
     ranges,
     stats: {

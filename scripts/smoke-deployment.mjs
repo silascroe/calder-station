@@ -34,7 +34,7 @@ async function readJson(baseUrl, pathname) {
   return body;
 }
 
-export async function smokeDeployment({ url, environment, object }) {
+export async function smokeDeployment({ url, environment, object, requireModel = false }) {
   let lastError;
   for (let attempt = 1; attempt <= RETRIES; attempt += 1) {
     try {
@@ -49,6 +49,10 @@ export async function smokeDeployment({ url, environment, object }) {
       assertEqual(town.environment, environment, "town.environment");
       assertEqual(town.persistence, "durable-object", "town.persistence");
       if (!health.alarmAt) throw new Error("health.alarmAt was not scheduled");
+      if (requireModel) {
+        assertEqual(health.modelReady, true, "health.modelReady");
+        if (!health.evaluationRevision) throw new Error("health.evaluationRevision was not configured");
+      }
       return { health, town };
     } catch (error) {
       lastError = error;
@@ -62,9 +66,10 @@ if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).
   const url = argument("url");
   const environment = argument("environment");
   const object = argument("object");
+  const requireModel = process.argv.includes("--require-model");
   if (!url || !environment || !object) {
-    throw new Error("Usage: smoke-deployment.mjs --url URL --environment NAME --object KEY");
+    throw new Error("Usage: smoke-deployment.mjs --url URL --environment NAME --object KEY [--require-model]");
   }
-  const result = await smokeDeployment({ url, environment, object });
+  const result = await smokeDeployment({ url, environment, object, requireModel });
   console.log(`Deployment healthy: ${result.health.environment} / ${result.health.persistence} / ${result.health.object}`);
 }

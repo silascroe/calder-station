@@ -5,6 +5,10 @@ import {
   townView,
 } from "./simulation.js";
 import { RookwoodTown, townStorageKey } from "./town-do.js";
+import {
+  MODEL_EVALUATION_REVISION,
+  runModelEvaluation,
+} from "./model-evaluation.js";
 
 export { RookwoodTown };
 
@@ -73,6 +77,52 @@ async function persistentApi(env, url, path) {
   return stub.fetch(persistentRequest(url, path));
 }
 
+async function storeEvaluation(stub, report) {
+  const response = await stub.fetch(new Request("https://town.internal/evaluation", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(report),
+  }));
+  if (!response.ok) throw new Error(`Could not persist model evaluation: HTTP ${response.status}`);
+}
+
+export async function runScheduledModelEvaluation(env, { wallClock = new Date() } = {}) {
+  if (env?.TOWN_ENV !== "staging") return { status: "skipped-non-staging" };
+  if (!persistentBindingReady(env)) throw new Error("Staging model evaluation requires the TOWN binding");
+  const revision = env.MODEL_EVALUATION_REVISION ?? MODEL_EVALUATION_REVISION;
+  const stub = env.TOWN.getByName(townStorageKey(env));
+  const currentResponse = await stub.fetch(new Request("https://town.internal/evaluation"));
+  if (!currentResponse.ok) throw new Error(`Could not read model evaluation: HTTP ${currentResponse.status}`);
+  const current = await currentResponse.json();
+  if (current.revision === revision && current.status === "complete") return current;
+
+  if (!env.DEEPSEEK_API_KEY) {
+    const blocked = {
+      kind: "calder-station-model-evaluation",
+      revision,
+      status: "blocked-missing-key",
+      checkedAt: new Date(wallClock).toISOString(),
+    };
+    await storeEvaluation(stub, blocked);
+    return blocked;
+  }
+
+  let report;
+  try {
+    report = await runModelEvaluation({ env, wallClock, revision });
+  } catch (error) {
+    report = {
+      kind: "calder-station-model-evaluation",
+      revision,
+      status: "failed",
+      checkedAt: new Date(wallClock).toISOString(),
+      error: error?.name ?? "EvaluationError",
+    };
+  }
+  await storeEvaluation(stub, report);
+  return report;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -80,7 +130,7 @@ export default {
     if (url.pathname.startsWith("/api/")) {
       if (request.method !== "GET") return methodNotAllowed();
 
-      if (["/api/health", "/api/town", "/api/events"].includes(url.pathname)) {
+      if (["/api/health", "/api/town", "/api/events", "/api/evaluation"].includes(url.pathname)) {
         const configurationError = persistenceConfigurationError(url, env);
         if (configurationError) return configurationError;
       }
@@ -131,6 +181,13 @@ export default {
           });
         }
 
+        if (url.pathname === "/api/evaluation") {
+          if (!shouldUsePersistentTown(url, env) || env?.TOWN_ENV !== "staging") {
+            return json({ error: "Model evaluation reports are available only from persistent staging." }, 404);
+          }
+          return await persistentApi(env, url, "/evaluation");
+        }
+
         return json({ error: "API route not found." }, 404);
       } catch (error) {
         if (error instanceof RangeError || error instanceof TypeError) {
@@ -145,5 +202,11 @@ export default {
     }
 
     return env.ASSETS.fetch(request);
+  },
+
+  async scheduled(_controller, env, ctx) {
+    const work = runScheduledModelEvaluation(env);
+    if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work);
+    else await work;
   },
 };

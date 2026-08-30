@@ -28,6 +28,15 @@ export function validateDeployConfig(config) {
   if (!staging?.name || staging.name === config?.name) {
     errors.push("staging must deploy under a Worker name distinct from production");
   }
+  if (!staging.vars?.MODEL_EVALUATION_REVISION) {
+    errors.push("staging must declare MODEL_EVALUATION_REVISION for bounded paid evaluation");
+  }
+  if (!Array.isArray(staging.triggers?.crons) || staging.triggers.crons.length !== 1) {
+    errors.push("staging must declare exactly one scheduled model-evaluation trigger");
+  }
+  if (config?.triggers?.crons?.length) {
+    errors.push("production must not inherit or declare the staging evaluation trigger");
+  }
   if (config?.exports?.RookwoodTown?.storage !== "sqlite") {
     errors.push("RookwoodTown must remain declared as SQLite-backed storage");
   }
