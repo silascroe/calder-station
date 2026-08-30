@@ -45,7 +45,20 @@ const relationships = [
   { id: "rel-lio-tamsin", fromId: "lio", toId: "tamsin", kind: "evening friends", strength: 61 },
 ];
 
-export const TOWN_SEED_REVISION = 2;
+const obligations = [
+  {
+    id: "obligation-sal-vey-notice",
+    kind: "delivery",
+    ownerId: "sal",
+    counterpartyId: "vey",
+    destinationId: "town-hall",
+    title: "Vey's sealed notice",
+    description: "A sealed notice from Vey must reach Rookwood Hall before noon, but Sal's ordinary route is already waiting.",
+    dueAfterMinutes: 12 * 60,
+  },
+];
+
+export const TOWN_SEED_REVISION = 3;
 
 function resident({
   id,
@@ -457,6 +470,7 @@ export const townSeed = {
     }),
   ],
   relationships,
+  obligations,
 };
 
 export const tinyTownSeed = {
@@ -479,4 +493,5 @@ export const tinyTownSeed = {
     "otis",
     "sal",
   ].includes(relationship.toId)),
+  obligations: [],
 };

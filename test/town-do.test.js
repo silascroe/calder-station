@@ -53,9 +53,9 @@ class FakeContext {
   blockConcurrencyWhile(callback) { return callback(); }
 }
 
-function makeTown() {
+function makeTown(env = {}) {
   const storage = new FakeStorage();
-  return { town: new RookwoodTown(new FakeContext(storage), {}), storage };
+  return { town: new RookwoodTown(new FakeContext(storage), env), storage };
 }
 
 test("the town object initializes the current persistent Rookwood", async () => {
@@ -68,6 +68,7 @@ test("the town object initializes the current persistent Rookwood", async () => 
   assert.equal(state.residents.length, 15);
   assert.equal(state.locations.length, 14);
   assert.equal(state.relationships.length, 27);
+  assert.equal(state.obligations.length, 1);
   assert.equal(state.stats.eventCount, 1);
   assert.equal(storage.sql.eventRows.size, 1);
   assert.ok(storage.alarmAt > Date.now());
@@ -79,6 +80,7 @@ test("an existing ten-person projection reconciles without replacing evolved sta
   old.residents = old.residents.slice(0, 10);
   old.locations = old.locations.slice(0, 11);
   old.relationships = old.relationships.slice(0, 12);
+  delete old.obligations;
   old.seedRevision = 1;
   old.residents[0].energy = 41;
   delete old.residents[0].dailyPlan;
@@ -95,11 +97,88 @@ test("an existing ten-person projection reconciles without replacing evolved sta
   assert.equal(state.residents.length, 15);
   assert.equal(state.locations.length, 14);
   assert.equal(state.relationships.length, 27);
+  assert.equal(state.obligations.length, 1);
   assert.equal(state.residents.find(({ id }) => id === "mara").energy, 41);
   assert.equal(state.residents.find(({ id }) => id === "mara").socialCount, 0);
   assert.ok(state.residents.some(({ id }) => id === "edda"));
   assert.equal(state.stats.eventCount, 2);
   assert.equal(storage.sql.eventRows.size, 2);
+});
+
+test("a due Sal decision uses one model plan and records its usage", async () => {
+  let calls = 0;
+  const { town, storage } = makeTown({
+    DEEPSEEK_API_KEY: "test-key",
+    DEEPSEEK_FETCH: async () => {
+      calls += 1;
+      return new Response(JSON.stringify({
+        id: "chatcmpl-town-test",
+        model: "deepseek-v4-flash",
+        choices: [{
+          finish_reason: "stop",
+          message: {
+            content: JSON.stringify({
+              priorities: ["fulfill the sealed notice", "keep the route intact"],
+              action: "deliver",
+              locationId: "town-hall",
+              reason: "The notice is due before noon.",
+              status: "Taking the direct route",
+              mood: "Determined",
+              obligationDecision: {
+                obligationId: "obligation-sal-vey-notice",
+                choice: "fulfill",
+                note: "The direct route is still possible.",
+              },
+              socialIntentions: [],
+            }),
+          },
+        }],
+        usage: { prompt_tokens: 400, completion_tokens: 80, total_tokens: 480 },
+      }), { status: 200 });
+    },
+  });
+  const initial = createInitialTown();
+  initial.residents.find(({ id }) => id === "sal").nextDecisionAt = "2026-08-31T00:30:00.000Z";
+  town.persist(initial);
+
+  await town.alarm();
+  const state = await (await town.fetch(new Request("https://town.internal/state"))).json();
+
+  assert.equal(calls, 1);
+  assert.equal(state.stats.modelCalls, 1);
+  assert.equal(state.stats.modelAttempts, 1);
+  assert.equal(state.stats.modelFallbacks, 0);
+  assert.equal(state.stats.modelPromptTokens, 400);
+  assert.equal(state.stats.modelCompletionTokens, 80);
+  assert.equal(state.obligations[0].status, "fulfilled");
+  assert.equal(state.residents.find(({ id }) => id === "sal").dailyPlan.source, "model");
+  assert.ok([...storage.sql.eventRows.values()].some(({ event_json }) => JSON.parse(event_json).source === "model"));
+});
+
+test("a failed model request falls back without stopping the town", async () => {
+  let calls = 0;
+  const { town, storage } = makeTown({
+    DEEPSEEK_API_KEY: "test-key",
+    DEEPSEEK_FETCH: async () => {
+      calls += 1;
+      throw new Error("provider unavailable");
+    },
+  });
+  const initial = createInitialTown();
+  initial.residents.find(({ id }) => id === "sal").nextDecisionAt = "2026-08-31T00:30:00.000Z";
+  town.persist(initial);
+
+  await town.alarm();
+  const state = await (await town.fetch(new Request("https://town.internal/state"))).json();
+  const events = [...storage.sql.eventRows.values()].map(({ event_json }) => JSON.parse(event_json));
+
+  assert.equal(calls, 1);
+  assert.equal(state.stats.modelCalls, 0);
+  assert.equal(state.stats.modelAttempts, 1);
+  assert.equal(state.stats.modelFallbacks, 1);
+  assert.equal(state.obligations[0].status, "fulfilled");
+  assert.equal(state.residents.find(({ id }) => id === "sal").dailyPlan.model.fallback, true);
+  assert.ok(events.some((event) => event.type === "model-fallback" && event.reason === "network_error"));
 });
 
 test("alarms advance from the projection without loading the entire event log", async () => {

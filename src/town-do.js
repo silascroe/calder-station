@@ -4,6 +4,15 @@ import {
   reconcileTownWithSeed,
   townView,
 } from "./simulation.js";
+import {
+  openObligationFor,
+  scriptedObligationPlan,
+} from "./obligations.js";
+import {
+  createDeepSeekPlan,
+  DEFAULT_DEEPSEEK_MODEL,
+  MODEL_RESIDENT_ID,
+} from "./deepseek-planner.js";
 
 export const TOWN_NAME = "rookwood";
 export const SIMULATION_STEP_MINUTES = 60;
@@ -55,6 +64,15 @@ function eventLimit(url) {
     throw new RangeError(`limit must be between 1 and ${MAX_EVENT_LIMIT}`);
   }
   return limit;
+}
+
+function dueWithin(state, residentId, minutes) {
+  const resident = state.residents.find(({ id }) => id === residentId);
+  if (!resident?.nextDecisionAt) return null;
+  const decisionAt = new Date(resident.nextDecisionAt);
+  const horizon = new Date(new Date(state.now).getTime() + minutes * 60 * 1000);
+  if (Number.isNaN(decisionAt.getTime()) || decisionAt > horizon) return null;
+  return { resident, decisionAt };
 }
 
 /** One serialized owner for Rookwood's projection, event log, and heartbeat. */
@@ -145,7 +163,9 @@ export class RookwoodTown {
     }
 
     const stored = JSON.parse(rows[0].state_json);
-    stored.events = [];
+    // Keep only a small recent window in memory for the next decision. The
+    // full history remains in SQLite and is never sent to the model.
+    stored.events = this.readEvents(8).reverse();
     const reconciled = reconcileTownWithSeed(stored);
     if (reconciled.needsPersist) this.persist(reconciled.state);
     await this.ensureAlarm();
@@ -180,13 +200,18 @@ export class RookwoodTown {
           ok: true,
           service: "town-dashboard",
           mode: state.mode,
-          engine: "deterministic-scripted",
+          engine: this.env?.DEEPSEEK_API_KEY ? "hybrid-scripted-deepseek" : "deterministic-scripted",
+          modelReady: Boolean(this.env?.DEEPSEEK_API_KEY),
           persistence: state.persistence,
           object: TOWN_NAME,
           seedRevision: state.seedRevision,
           tickCount: state.stats.tickCount,
           eventCount: state.stats.eventCount,
           modelCalls: state.stats.modelCalls,
+          modelAttempts: state.stats.modelAttempts,
+          modelFallbacks: state.stats.modelFallbacks,
+          modelPromptTokens: state.stats.modelPromptTokens,
+          modelCompletionTokens: state.stats.modelCompletionTokens,
           alarmAt: alarmAt === null ? null : new Date(alarmAt).toISOString(),
           serverTime: new Date().toISOString(),
         });
@@ -201,9 +226,57 @@ export class RookwoodTown {
     }
   }
 
+  async modelPlanFor(state) {
+    if (!this.env?.DEEPSEEK_API_KEY) return null;
+
+    const due = dueWithin(state, MODEL_RESIDENT_ID, SIMULATION_STEP_MINUTES);
+    if (!due || !openObligationFor(state, due.resident.id)) return null;
+
+    try {
+      const plan = await createDeepSeekPlan({
+        state,
+        resident: due.resident,
+        now: due.decisionAt,
+        obligation: openObligationFor(state, due.resident.id),
+        env: this.env,
+        fetchImpl: this.env.DEEPSEEK_FETCH ?? globalThis.fetch,
+      });
+      return { decisionAt: due.decisionAt.toISOString(), plan };
+    } catch (error) {
+      return {
+        decisionAt: due.decisionAt.toISOString(),
+        plan: {
+          ...scriptedObligationPlan({
+            town: state,
+            resident: due.resident,
+            now: due.decisionAt,
+          }),
+          modelTelemetry: {
+            attempted: true,
+            fallback: true,
+            model: this.env.DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL,
+            ...(error.telemetry ?? {}),
+            errorCode: error.code ?? "request_failed",
+          },
+        },
+      };
+    }
+  }
+
   async alarm() {
     const state = await this.load();
-    const next = advanceTown(state, { minutes: SIMULATION_STEP_MINUTES });
+    const modelRun = await this.modelPlanFor(state);
+    const next = advanceTown(state, {
+      minutes: SIMULATION_STEP_MINUTES,
+      decisionAdapter: ({ town, resident, now }) => {
+        if (modelRun
+          && resident.id === MODEL_RESIDENT_ID
+          && now.toISOString() === modelRun.decisionAt) {
+          return modelRun.plan;
+        }
+        return scriptedObligationPlan({ town, resident, now });
+      },
+    });
     this.persist(next);
     await this.ctx.storage.setAlarm(Date.now() + HEARTBEAT_INTERVAL_MS);
   }

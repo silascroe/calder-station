@@ -21,6 +21,10 @@ test("the town seed creates fifteen integrated residents, places, and relationsh
   assert.equal(town.residents.length, 15);
   assert.equal(town.locations.length, 14);
   assert.equal(town.relationships.length, 27);
+  assert.equal(town.obligations.length, 1);
+  assert.equal(town.obligations[0].ownerId, "sal");
+  assert.equal(town.obligations[0].counterpartyId, "vey");
+  assert.equal(town.obligations[0].status, "open");
   const residentIds = new Set(town.residents.map((resident) => resident.id));
   assert.ok(town.relationships.every((relationship) => (
     relationship.fromId !== relationship.toId
@@ -63,8 +67,14 @@ test("a preview advances the clock and lets each resident make a decision", () =
   assert.ok(decisions.some((event) => event.actorId === "amos"));
   assert.equal(town.stats.planCount, 15);
   assert.equal(town.stats.encounterCount, 3);
+  assert.equal(town.stats.modelCalls, 0);
+  assert.equal(town.stats.modelAttempts, 0);
   assert.ok(town.residents.every((resident) => resident.dailyPlan?.action));
   assert.ok(town.events.some((event) => event.type === "encounter" && event.relatedActorId));
+  assert.equal(town.obligations[0].status, "fulfilled");
+  assert.equal(town.obligations[0].resolution, "fulfill");
+  assert.equal(town.relationships.find(({ id }) => id === "rel-vey-sal").strength, 62);
+  assert.ok(town.events.some((event) => event.type === "obligation" && event.actorId === "sal"));
   assert.equal(town.relationships.find(({ id }) => id === "rel-thom-pella").strength, 75);
   assert.equal(town.residents.find(({ id }) => id === "thom").lastEncounterWithId, "pella");
   assert.equal(town.residents.find(({ id }) => id === "pella").lastEncounterWithId, "thom");

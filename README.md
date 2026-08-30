@@ -2,7 +2,7 @@
 
 Town is an experiment in persistent multi-agent simulation: a small world with residents, routines, relationships, resources, and consequences that continue while nobody is looking.
 
-The repository is deliberately small, but Rookwood is now persistent: one SQLite-backed Cloudflare Durable Object owns its projection, bounded event reads, and hourly heartbeat. The deterministic simulation remains the authority and the public site is a read-only window into it. No AI API is called yet.
+The repository is deliberately small, but Rookwood is now persistent: one SQLite-backed Cloudflare Durable Object owns its projection, bounded event reads, and hourly heartbeat. The deterministic simulation remains the authority and the public site is a read-only window into it. The ephemeral preview stays fully deterministic; the persistent alarm has one bounded DeepSeek experiment for Sal Orin's seeded obligation when `DEEPSEEK_API_KEY` is configured.
 
 ## Design constraints
 
@@ -14,7 +14,8 @@ The repository is deliberately small, but Rookwood is now persistent: one SQLite
 - Every future side effect should be validated by the simulation before it changes world state.
 - The town should remain interesting with a small population. Bigger is not automatically better.
 - The dashboard is read-only until the simulation and event model are trustworthy.
-- The current scripted simulation is reproducible and makes zero model calls.
+- The preview is reproducible and makes zero model calls; the persistent experiment is separately gated and observable.
+- A model may propose only a structured plan; deterministic validation and consequences decide what enters the world.
 
 ## Run the tests
 
@@ -34,7 +35,9 @@ The local Worker serves the town view and API. With local Durable Object storage
 
 ## Current simulation slice
 
-The current seed contains fifteen residents, fourteen locations, and twenty-seven relationship edges. Each resident has a home, workplace, routine, needs, and a staggered plan slot. The scripted planner returns one bounded daily action plus an optional social intention; the simulation validates and resolves it, and accepted actions or encounters become compact events.
+The current seed contains fifteen residents, fourteen locations, twenty-seven relationship edges, and one obligation. Each resident has a home, workplace, routine, needs, and a staggered plan slot. The scripted planner returns one bounded daily action plus an optional social intention; the simulation validates and resolves it, and accepted actions, encounters, or obligation outcomes become compact events.
+
+The persistent town currently gives DeepSeek exactly one meaningful choice: Sal must decide whether to fulfill Vey's sealed notice or report a delay. That request is made only when Sal's scheduled turn is due and the obligation is still open. It uses a small JSON response budget, no retry loop, a strict validator, and the same scripted decision as a fallback. Usage, fallback, and outcome are recorded in the projection so the experiment can be judged rather than hand-waved.
 
 Persisted towns reconcile idempotently with the authored seed. Adding a resident or place updates an existing Rookwood without replacing evolved state or history. Event IDs use the projection's monotonic count, so the town can advance without loading its entire history into memory; viewer reads are capped and newest-first.
 
@@ -57,6 +60,8 @@ The API accepts `ticks` from `0` through `48`. The `tinyTownSeed` remains availa
 - `src/simulation.js` — state creation, ticking, event creation, replay, and API projections.
 - `src/scripted-decisions.js` — ordinary rule-based action policy; no model calls.
 - `src/daily-plans.js` — versioned planner contract and validator.
+- `src/obligations.js` — seeded obligation state, fallback decision, and deterministic consequences.
+- `src/deepseek-planner.js` — bounded DeepSeek adapter; it returns plans and never mutates town state.
 - `src/social.js` — deterministic co-location and relationship resolver.
 - `src/demo-data.js` — the fifteen-resident Rookwood seed and compact test seed.
 - `public/` — the static dashboard shell and client-side routes.
@@ -70,8 +75,8 @@ The manual GitHub Actions workflow creates or updates the `town-dashboard` Worke
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 
-Run **Deploy Town Dashboard** from the repository's Actions tab. The DeepSeek key is not used by this dashboard shell yet; add it later as the Cloudflare Worker secret `DEEPSEEK_API_KEY` when the model adapter exists.
+Run **Deploy Town Dashboard** from the repository's Actions tab. The dashboard never receives the model key. The persistent alarm reads the Cloudflare Worker secret `DEEPSEEK_API_KEY`; if it is absent, Rookwood remains entirely scripted. An optional `DEEPSEEK_MODEL` runtime variable selects another compatible model, otherwise the adapter uses `deepseek-v4-flash`.
 
 ## What comes next
 
-The next useful domain slice is one model-backed resident behind a strict timeout, token budget, retry limit, and scripted fallback. D1 remains unnecessary until cross-town queries or administration create a real need for it.
+The next useful step is observation: let the persistent town cross Sal's scheduled turn, inspect whether the model or fallback resolved the obligation, and compare the resulting event and relationship change. Do not add another model-eligible incident until this one is easy to explain and test. D1 remains unnecessary until cross-town queries or administration create a real need for it.

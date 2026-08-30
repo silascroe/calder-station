@@ -5,7 +5,8 @@ This is a direction document, not a promise to build every item immediately. The
 ## Current boundary
 
 - Fifteen-resident Rookwood seed with fourteen locations and twenty-seven seeded relationships.
-- Deterministic scripted game AI; no model calls.
+- Hybrid planner boundary: deterministic preview plus one bounded DeepSeek experiment in the persistent alarm.
+- One authored Sal/Vey obligation conflict: fulfill a sealed notice or report a delay.
 - One SQLite-backed `RookwoodTown` Durable Object for persistent state, events, migration, and an hourly alarm.
 - A read-only town journal with map occupancy, people, relationships, and bounded history.
 - The original three-resident seed remains available as a compact regression scenario.
@@ -24,7 +25,7 @@ For the first persistent town, use one SQLite-backed Durable Object named for th
 
 ## Daily planner contract
 
-The eventual model adapter should make at most one call per resident per simulated day. That is a budget ceiling, not a requirement to call residents who have nothing meaningful to reconsider. Calls should remain staggered and subject to the existing off-peak policy.
+The model adapter should make at most one call per eligible resident per simulated day. That is a budget ceiling, not a requirement to call residents who have nothing meaningful to reconsider. Calls should remain staggered and subject to the existing off-peak policy. The first experiment is narrower still: only Sal, only while Vey's sealed notice is open, one request, no retries.
 
 A daily plan may contain:
 
@@ -66,15 +67,27 @@ Do not add D1 merely because it is a database. Introduce it when the project has
 
 `src/daily-plans.js` now defines a versioned, validated plan contract. The scripted planner is the reference implementation and the legacy one-intent adapter remains compatible for tests. Version 1 intentionally executes one action per plan; the shape can grow only when the simulation has a real action queue.
 
-### 4. Trial one model resident
+### 4. Trial one model resident — first experiment landed
 
-Give one resident a DeepSeek planner behind a strict schema, token budget, timeout, retry limit, and deterministic fallback. Record call reasons, token usage, rejected intents, and resulting events. Do not let the model mutate storage.
+Sal Orin receives a DeepSeek planner for one obligation conflict: whether to fulfill Vey's sealed notice or report a delay. The adapter uses a strict JSON shape, a 260-token output cap, an eight-second timeout, no retries, a deterministic fallback, and the existing plan validator. The Durable Object records request usage, fallback status, and the resulting obligation/relationship event. The model never mutates storage.
+
+The workflow is intentionally inspectable:
+
+1. The alarm checks whether Sal's scheduled turn falls inside the next hourly step and whether the obligation remains open.
+2. The adapter sends Sal's identity, needs, routine, bounded relationships, recent events, obligation, and two legal choices to DeepSeek.
+3. The response is parsed as JSON and validated against the current town.
+4. The deterministic executor applies delivery or delay, changes the Vey relationship by the authored amount, and appends an event.
+5. A timeout, provider error, truncated response, invalid JSON, or invalid plan uses the scripted choice and records a fallback event.
 
 ### 5. Add social consequences carefully — first slice landed
 
 Plans can create grounded talk intentions. The deterministic resolver only records an encounter when both residents are related, co-located, and not resting; it caps each resident at one encounter per simulated day and nudges the relationship strength upward. Exchanges, promises, conflicts, and richer memory remain future work.
 
-### 6. Grow the town only when the systems need it
+### 6. Evaluate before expanding the experiment
+
+Let the persistent town reach the eligible turn more than once across fresh seeded runs or controlled test fixtures. Compare model success, fallback rate, token usage, choice distribution, and whether the resulting event is understandable from the visible context. Keep the incident class bounded until that evidence is useful.
+
+### 7. Grow the town only when the systems need it
 
 Fifteen residents are enough for the next meaningful town. Do not grow again until economy, relationships, memory, scheduling, and the viewer can explain what happened. Population is not a substitute for interacting systems.
 

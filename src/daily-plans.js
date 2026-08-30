@@ -2,6 +2,7 @@ import { scriptedDecision } from "./scripted-decisions.js";
 
 export const DAILY_PLAN_VERSION = 1;
 export const PLAN_ACTIONS = Object.freeze(["work", "eat", "rest", "deliver", "observe"]);
+export const OBLIGATION_CHOICES = Object.freeze(["fulfill", "report_delay"]);
 
 function dayKey(value) {
   return new Date(value).toISOString().slice(0, 10);
@@ -110,6 +111,26 @@ export function validateDailyPlan(plan, { town, resident, now } = {}) {
     }
     if (!relationshipFor(town, resident.id, intention.targetId)) {
       throw new RangeError("Social intention has no recorded relationship");
+    }
+  }
+  if (plan.obligationDecision !== undefined) {
+    const decision = plan.obligationDecision;
+    if (!decision || typeof decision !== "object" || !OBLIGATION_CHOICES.includes(decision.choice)) {
+      throw new RangeError(`Unsupported obligation choice: ${decision?.choice}`);
+    }
+    const obligation = (town.obligations ?? []).find(({ id }) => id === decision.obligationId);
+    if (!obligation || obligation.status !== "open" || obligation.ownerId !== resident.id) {
+      throw new RangeError("Daily plan references an unavailable obligation");
+    }
+    if (typeof decision.note !== "string" || decision.note.length === 0 || decision.note.length > 160) {
+      throw new TypeError("Obligation decision note must be a non-empty string under 160 characters");
+    }
+    const action = plan.actions[0];
+    if (decision.choice === "fulfill" && (action.action !== "deliver" || action.locationId !== obligation.destinationId)) {
+      throw new RangeError("Fulfilling an obligation requires a delivery to its destination");
+    }
+    if (decision.choice === "report_delay" && action.action !== "observe") {
+      throw new RangeError("Reporting an obligation delay requires an observe action");
     }
   }
   return plan;

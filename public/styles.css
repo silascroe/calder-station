@@ -62,6 +62,8 @@ h3 { margin: 0; font-size: 23px; }
 .event-marker-movement, .event-marker-observation { background: var(--blue); }
 .event-marker-decision { background: var(--green); }
 .event-marker-encounter { background: var(--accent); box-shadow: 0 0 0 4px rgba(225, 170, 88, .12); }
+.event-marker-obligation { background: var(--accent); box-shadow: 0 0 0 4px rgba(225, 170, 88, .12); }
+.event-marker-model-fallback { background: #c87968; }
 .event-marker-system { background: var(--dim); }
 .event-row p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
 .event-row strong { color: var(--ink); font-weight: 600; }
@@ -127,6 +129,7 @@ h3 { margin: 0; font-size: 23px; }
 .plan-note span { color: var(--dim); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
 .plan-note strong { color: var(--accent); font: 16px/1.4 var(--serif); font-weight: 400; }
 .plan-note small { color: var(--muted); font-size: 11px; }
+.plan-note .plan-source { color: var(--accent); }
 .connection-list { display: grid; gap: 0; padding: 0; margin: 0; list-style: none; }
 .connection-list li { display: flex; justify-content: space-between; gap: 16px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 12px; }
 .connection-list a:hover { color: var(--accent); }

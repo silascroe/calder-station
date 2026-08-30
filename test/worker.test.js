@@ -52,7 +52,7 @@ test("events endpoint returns newest events and page routes delegate to assets",
 
   assert.equal(eventsResponse.status, 200);
   assert.equal(eventsBody.events[0].type, "encounter");
-  assert.equal(eventsBody.events.length, 30);
+  assert.equal(eventsBody.events.length, 31);
   assert.equal(missing.status, 404);
   assert.equal(page.status, 200);
   assert.equal(await page.text(), "asset:/map");

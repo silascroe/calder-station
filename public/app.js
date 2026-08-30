@@ -59,6 +59,10 @@ function actionLabel(action) {
   }[action] ?? action ?? "No action yet";
 }
 
+function townHasModelActivity() {
+  return Boolean(store.town?.stats?.modelAttempts || store.town?.stats?.modelCalls);
+}
+
 function pageHeader(eyebrow, title, description = "") {
   return `
     <header class="page-header">
@@ -106,6 +110,7 @@ function residentCard(resident, { compact = false } = {}) {
 function renderOverview() {
   const { town, events } = store;
   const active = town.residents.filter((resident) => resident.lastAction !== "rest");
+  const openObligations = (town.obligations ?? []).filter(({ status }) => status === "open");
   const nextResidents = [...town.residents]
     .sort((left, right) => String(left.nextDecisionAt).localeCompare(String(right.nextDecisionAt)))
     .slice(0, 6);
@@ -161,6 +166,7 @@ function renderOverview() {
     <section class="town-ledger" aria-label="Simulation details">
       <span>${town.locations.length} places</span><span>${town.relationships?.length ?? 0} relationships</span>
       <span>${town.stats.tickCount} hours advanced</span><span>${town.stats.encounterCount ?? 0} encounters</span>
+      <span>${town.stats.modelCalls ?? 0} model choices</span><span>${openObligations.length} open obligations</span>
     </section>
   `;
 }
@@ -226,6 +232,12 @@ function renderResidentDetail(id) {
     : null;
   const plannedLocation = resident.dailyPlan?.locationId ? locationById(resident.dailyPlan.locationId) : null;
   const planAction = resident.dailyPlan?.action ?? resident.dailyPlan?.priorities?.[0];
+  const obligation = (store.town?.obligations ?? []).find(({ ownerId }) => ownerId === resident.id);
+  const modelStatus = resident.dailyPlan?.model?.fallback
+    ? "Scripted fallback used"
+    : resident.dailyPlan?.model?.attempted
+      ? "DeepSeek shaped this decision"
+      : null;
 
   app.innerHTML = `
     ${pageHeader("One life in Rookwood", resident.name, `${resident.role} · ${resident.location}`)}
@@ -246,7 +258,7 @@ function renderResidentDetail(id) {
           <p class="eyebrow">Ordinary day</p><h2>Home and routine</h2>
           <div class="route-line"><span>${escapeHtml(home?.name ?? resident.homeLocationId)}</span><i></i><span>${escapeHtml(work?.name ?? resident.workLocationId)}</span></div>
           <p>${escapeHtml(resident.name.split(" ")[0])} usually starts work at ${hourLabel(routine.workStart)} and finishes around ${hourLabel(routine.workEnd)}. ${escapeHtml(routine.workReason ?? "The day's work is waiting.")}</p>
-          ${resident.dailyPlan ? `<div class="plan-note"><span>Latest plan</span><strong>${escapeHtml(actionLabel(planAction))}${plannedLocation ? ` at ${escapeHtml(plannedLocation.name)}` : ""}</strong>${resident.dailyPlan.reason ? `<small>${escapeHtml(resident.dailyPlan.reason)}</small>` : ""}${plannedSocialTarget ? `<small>Wants a word with ${escapeHtml(plannedSocialTarget.name)}</small>` : ""}</div>` : `<div class="plan-note"><span>Latest plan</span><strong>No decision yet</strong></div>`}
+          ${resident.dailyPlan ? `<div class="plan-note"><span>Latest plan</span><strong>${escapeHtml(actionLabel(planAction))}${plannedLocation ? ` at ${escapeHtml(plannedLocation.name)}` : ""}</strong>${resident.dailyPlan.reason ? `<small>${escapeHtml(resident.dailyPlan.reason)}</small>` : ""}${plannedSocialTarget ? `<small>Wants a word with ${escapeHtml(plannedSocialTarget.name)}</small>` : ""}${obligation ? `<small>Obligation: ${escapeHtml(obligation.status)}</small>` : ""}${modelStatus ? `<small class="plan-source">${escapeHtml(modelStatus)}</small>` : ""}</div>` : `<div class="plan-note"><span>Latest plan</span><strong>No decision yet</strong></div>`}
         </article>
         <article class="connections-card">
           <p class="eyebrow">Known ties</p><h2>Relationships</h2>
@@ -304,7 +316,9 @@ async function loadData({ quiet = false } = {}) {
     store.events = (await eventsResponse.json()).events;
     store.error = null;
     store.refreshedAt = new Date();
-    connectionLabel.textContent = "Live · scripted rules";
+    connectionLabel.textContent = townHasModelActivity()
+      ? "Live · model experiment"
+      : "Live · scripted rules";
   } catch (error) {
     if (!quiet || !store.town) store.error = error instanceof Error ? error.message : "Unable to load the town.";
     connectionLabel.textContent = "Town window offline";

@@ -1,6 +1,11 @@
 import { spreadDailyDecisionTimes } from "./scheduler.js";
 import { TOWN_SEED_REVISION, townSeed } from "./demo-data.js";
-import { normalizeDailyPlan, scriptedDailyPlan } from "./daily-plans.js";
+import { normalizeDailyPlan } from "./daily-plans.js";
+import {
+  materializeObligation,
+  resolveObligationDecision,
+  scriptedObligationPlan,
+} from "./obligations.js";
 import { resolveSocialIntentions } from "./social.js";
 
 const MINUTE_MS = 60 * 1000;
@@ -212,11 +217,18 @@ export function createInitialTown({
     locations: seedData.locations.map((location) => ({ ...location })),
     residents: [],
     relationships: (seedData.relationships ?? []).map((relationship) => ({ ...relationship })),
+    obligations: (seedData.obligations ?? []).map((obligation) => (
+      materializeObligation(obligation, startedAt)
+    )),
     events: [],
     stats: {
       tickCount: 0,
       decisionCount: 0,
       modelCalls: 0,
+      modelAttempts: 0,
+      modelFallbacks: 0,
+      modelPromptTokens: 0,
+      modelCompletionTokens: 0,
       eventCount: 0,
       planCount: 0,
       encounterCount: 0,
@@ -262,7 +274,7 @@ export function createInitialTown({
 
 export function advanceTown(state, {
   minutes = DEFAULT_TICK_MINUTES,
-  decisionAdapter = scriptedDailyPlan,
+  decisionAdapter = scriptedObligationPlan,
 } = {}) {
   if (!Number.isInteger(minutes) || minutes <= 0 || minutes > 24 * HOUR_MINUTES) {
     throw new RangeError("minutes must be an integer between 1 and 1440");
@@ -298,6 +310,30 @@ export function advanceTown(state, {
       now: effectiveDecisionAt,
     });
     const action = plan.actions[0];
+    const telemetry = plan.modelTelemetry;
+    const promptTokens = telemetry && Number.isSafeInteger(telemetry.promptTokens) && telemetry.promptTokens >= 0
+      ? telemetry.promptTokens
+      : 0;
+    const completionTokens = telemetry && Number.isSafeInteger(telemetry.completionTokens) && telemetry.completionTokens >= 0
+      ? telemetry.completionTokens
+      : 0;
+    if (telemetry?.attempted) {
+      next.stats.modelAttempts = (next.stats.modelAttempts ?? 0) + 1;
+      next.stats.modelPromptTokens = (next.stats.modelPromptTokens ?? 0) + promptTokens;
+      next.stats.modelCompletionTokens = (next.stats.modelCompletionTokens ?? 0) + completionTokens;
+      if (telemetry.fallback) {
+        next.stats.modelFallbacks = (next.stats.modelFallbacks ?? 0) + 1;
+        appendEvent(next, {
+          at: effectiveDecisionAt,
+          actorId: resident.id,
+          locationId: action.locationId,
+          type: "model-fallback",
+          text: "used the scripted fallback after the model could not return a valid plan",
+          source: "model-fallback",
+          reason: telemetry.errorCode ?? "unknown model error",
+        });
+      }
+    }
     resident.dailyPlan = {
       version: plan.version,
       day: plan.day,
@@ -308,10 +344,30 @@ export function advanceTown(state, {
       reason: action.reason,
       actionCount: plan.actions.length,
       socialIntentions: plan.socialIntentions.map((intention) => ({ ...intention })),
+      obligationDecision: plan.obligationDecision ? { ...plan.obligationDecision } : null,
+      model: telemetry ? {
+        attempted: Boolean(telemetry.attempted),
+        fallback: Boolean(telemetry.fallback),
+        model: telemetry.model ?? null,
+        requestId: telemetry.requestId ?? null,
+        promptTokens,
+        completionTokens,
+        totalTokens: telemetry.totalTokens ?? null,
+        errorCode: telemetry.errorCode ?? null,
+      } : null,
     };
     next.stats.planCount = (next.stats.planCount ?? 0) + 1;
     if (plan.source === "model") next.stats.modelCalls = (next.stats.modelCalls ?? 0) + 1;
     resolveDecision(next, resident, action, effectiveDecisionAt, plan.source);
+
+    const obligationEvent = resolveObligationDecision(next, resident, plan, effectiveDecisionAt);
+    if (obligationEvent) {
+      appendEvent(next, {
+        ...obligationEvent,
+        at: effectiveDecisionAt,
+        source: plan.source,
+      });
+    }
 
     const encounters = resolveSocialIntentions(next, resident, plan, effectiveDecisionAt);
     for (const encounter of encounters) {
@@ -375,16 +431,31 @@ export function reconcileTownWithSeed(state, { seedData = townSeed } = {}) {
     tickCount: 0,
     decisionCount: 0,
     modelCalls: 0,
+    modelAttempts: 0,
+    modelFallbacks: 0,
+    modelPromptTokens: 0,
+    modelCompletionTokens: 0,
     eventCount: 0,
     planCount: 0,
     encounterCount: 0,
   };
   next.stats.eventCount ??= next.events.length;
-  if (!("planCount" in next.stats) || !("encounterCount" in next.stats)) metadataChanged = true;
+  if (!("modelCalls" in next.stats) || !("planCount" in next.stats) || !("encounterCount" in next.stats)
+    || !("modelAttempts" in next.stats) || !("modelFallbacks" in next.stats)
+    || !("modelPromptTokens" in next.stats) || !("modelCompletionTokens" in next.stats)) {
+    metadataChanged = true;
+  }
   next.stats.planCount ??= next.stats.decisionCount ?? 0;
   next.stats.encounterCount ??= 0;
+  next.stats.modelCalls ??= 0;
+  next.stats.modelAttempts ??= 0;
+  next.stats.modelFallbacks ??= 0;
+  next.stats.modelPromptTokens ??= 0;
+  next.stats.modelCompletionTokens ??= 0;
+  if (!("obligations" in next) || !Array.isArray(next.obligations)) metadataChanged = true;
+  next.obligations = Array.isArray(next.obligations) ? next.obligations : [];
 
-  const changes = { locations: 0, residents: 0, relationships: 0 };
+  const changes = { locations: 0, residents: 0, relationships: 0, obligations: 0 };
   const locationIds = new Set(next.locations.map(({ id }) => id));
   for (const location of seedData.locations) {
     if (locationIds.has(location.id)) continue;
@@ -420,6 +491,14 @@ export function reconcileTownWithSeed(state, { seedData = townSeed } = {}) {
     changes.relationships += 1;
   }
 
+  const obligationIds = new Set(next.obligations.map(({ id }) => id));
+  for (const obligation of seedData.obligations ?? []) {
+    if (obligationIds.has(obligation.id)) continue;
+    next.obligations.push(materializeObligation(obligation, next.startedAt));
+    obligationIds.add(obligation.id);
+    changes.obligations += 1;
+  }
+
   next.seedRevision = TOWN_SEED_REVISION;
   const changed = Object.values(changes).some((count) => count > 0);
   if (changed) {
@@ -427,6 +506,7 @@ export function reconcileTownWithSeed(state, { seedData = townSeed } = {}) {
     if (changes.residents) additions.push(`${changes.residents} residents`);
     if (changes.locations) additions.push(`${changes.locations} places`);
     if (changes.relationships) additions.push(`${changes.relationships} relationships`);
+    if (changes.obligations) additions.push(`${changes.obligations} obligation${changes.obligations === 1 ? "" : "s"}`);
     appendEvent(next, {
       at: next.now,
       type: "system",
