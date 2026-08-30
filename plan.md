@@ -13,6 +13,13 @@ This is a direction document, not a promise to build every item immediately. Cal
 
 Success means a fresh staging Calder Station can run for 90 simulated days, produce replayable diagnostics, and show accumulated causal differences rather than ninety identical daily snapshots.
 
+## Senior review evidence — 2026-08-30
+
+- The deployed staging Worker is currently ephemeral: its named Wrangler environment omitted the non-inherited `TOWN` binding. The repository fix now declares the binding explicitly, rejects configured Workers that lack it, validates deployment configuration, and smoke-tests persistence after deployment. Staging still needs redeployment before this is true live.
+- The deterministic baseline is stable but repetitive. At Day 90 it produces 6,176 events and healthy bounds, but most residents have only 7–11 distinct daily action signatures, relationship change is entirely net-positive, social activity reaches only 13 of 27 ties, and one Sal/Jamie series accounts for 56 near-identical commitments.
+- The synchronous runner does not exercise DeepSeek, and the persistent adapter currently requests a plan before the engine reaches the exact planning instant. The next architecture layer is an asynchronous planning boundary at authoritative simulated time, followed by deliberate paid staging evaluation.
+- Current DeepSeek documentation lists weekday peak windows at 01:00–04:00 and 06:00–10:00 UTC, with off-peak pricing at half the peak rate. Scheduled production calls should retain that policy; deliberate evaluation needs an explicit bypass.
+
 ## What is deliberately true now
 
 Ordinary code owns time, needs, locations, queues, legality, movement, relationships, obligations, and consequences. The model may propose a bounded intent but cannot write world state. The dashboard reads projections and events; it does not contain simulation rules.
@@ -21,11 +28,11 @@ The action queue is intentionally finite: each plan has at most five actions, ea
 
 ## Next useful work
 
-1. Run fresh staging scenarios after rule changes and compare checkpoint reports.
-2. Inspect whether the commitment series creates understandable relationship and resource consequences rather than noise.
-3. Improve the deterministic world mechanics only where the reports expose a real missing cause: small resources, travel time, health, or work output may be candidates.
-4. Expand model participation only after a second incident class has a deterministic success criterion and a bounded fallback.
-5. Add deeper memory only when residents need selective beliefs or witnessed history that the current projection cannot explain.
+1. Redeploy and verify persistent staging without touching production state.
+2. Move model planning to the exact authoritative planning instant and add an async same-engine scenario path.
+3. Run enough genuine DeepSeek cases to measure validity, choice distribution, token use, cost, and sensitivity to changed circumstances.
+4. Replace the mechanical notice conveyor with the smallest conflict/resource mechanics that create explainable positive and negative downstream consequences.
+5. Expose meaningful longitudinal changes through the Folio rather than adding internal counters to the public surface.
 
 ## Deferred
 

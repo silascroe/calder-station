@@ -28,10 +28,35 @@ function previewFromUrl(url) {
   return runPreview(previewOptions(url));
 }
 
+function explicitPreview(url) {
+  return url.searchParams.has("ticks") || url.searchParams.get("preview") === "1";
+}
+
+function persistentBindingReady(env) {
+  return typeof env?.TOWN?.getByName === "function";
+}
+
+function configuredEnvironment(env) {
+  if (env?.TOWN_ENV === "production" || env?.TOWN_ENV === "staging") return env.TOWN_ENV;
+  return null;
+}
+
+function persistenceConfigurationError(url, env) {
+  if (explicitPreview(url) || persistentBindingReady(env)) return null;
+  const environment = configuredEnvironment(env);
+  if (!environment) return null;
+  return json({
+    ok: false,
+    error: `The ${environment} Worker is missing its required TOWN Durable Object binding.`,
+    service: "town-dashboard",
+    environment,
+    persistence: "misconfigured",
+    expectedBinding: "TOWN",
+  }, 503);
+}
+
 function shouldUsePersistentTown(url, env) {
-  return typeof env?.TOWN?.getByName === "function"
-    && !url.searchParams.has("ticks")
-    && url.searchParams.get("preview") !== "1";
+  return persistentBindingReady(env) && !explicitPreview(url);
 }
 
 function persistentRequest(url, path) {
@@ -54,6 +79,11 @@ export default {
 
     if (url.pathname.startsWith("/api/")) {
       if (request.method !== "GET") return methodNotAllowed();
+
+      if (["/api/health", "/api/town", "/api/events"].includes(url.pathname)) {
+        const configurationError = persistenceConfigurationError(url, env);
+        if (configurationError) return configurationError;
+      }
 
       try {
         if (url.pathname === "/api/health") {

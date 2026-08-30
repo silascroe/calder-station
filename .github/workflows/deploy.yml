@@ -23,6 +23,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Validate deployment configuration
+        run: npm run validate:deploy
+
       - name: Run tests
         run: npm test
 
@@ -36,12 +39,18 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Deploy staging Worker
+        id: deploy
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4"
           command: deploy --env staging
+
+      - name: Verify persistent staging Worker
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: npm run smoke:deploy -- --url "$DEPLOYMENT_URL" --environment staging --object rookwood-staging
 
   deploy-production:
     if: ${{ inputs.environment == 'production' }}
@@ -53,9 +62,15 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Deploy production Worker
+        id: deploy
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4"
           command: deploy
+
+      - name: Verify persistent production Worker
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: npm run smoke:deploy -- --url "$DEPLOYMENT_URL" --environment production --object rookwood

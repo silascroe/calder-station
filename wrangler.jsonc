@@ -32,6 +32,14 @@
       "name": "town-dashboard-staging",
       "vars": {
         "TOWN_ENV": "staging"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "TOWN",
+            "class_name": "RookwoodTown"
+          }
+        ]
       }
     }
   }

@@ -34,6 +34,8 @@ One Durable Object coordinates the town projection, event log, and hourly alarm.
 
 Production and staging are separate Worker environments and use separate object names: production retains the existing `rookwood` storage key, while staging uses `rookwood-staging`. The public display name is stored as `Calder Station` in both. A one-time migration updates old stored event text to the canonical names; the frontend no longer performs runtime legacy-name substitution.
 
+The `TOWN` binding is declared separately in each Wrangler environment because Durable Object bindings are not inherited. Config validation runs before deployment, and a post-deploy smoke check requires the expected environment, Durable Object key, persistence mode, and alarm. At runtime, a configured environment missing `TOWN` returns HTTP 503; only an explicit preview request may use ephemeral state there.
+
 Seed reconciliation adds authored records and refreshes authored identity/routine metadata without resetting evolved needs, location, queue, relationships, or history. Stable internal IDs remain stable across editorial renames.
 
 ## Long-horizon runner

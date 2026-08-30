@@ -117,6 +117,8 @@ Deployment is intentionally manual through GitHub Actions.
 
 Both environments use `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. `DEEPSEEK_API_KEY` is stored as a Cloudflare Worker secret only in environments that should make model calls; it is never sent to the browser.
 
+Wrangler does not inherit Durable Object bindings into named environments, so production and staging each declare `TOWN` explicitly. The workflow validates that configuration before deployment and then smoke-tests the deployed `/api/health` and `/api/town` responses. A configured production or staging Worker without its expected binding returns HTTP 503 instead of quietly serving an ephemeral replay.
+
 A code commit does not automatically reset, publish, or redeploy the town.
 
 ## Repository map
