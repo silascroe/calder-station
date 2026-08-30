@@ -11,18 +11,9 @@ const env = { DEEPSEEK_API_KEY: "test-key" };
 
 function fixtureContent(overrides = {}) {
   return JSON.stringify({
-    priorities: ["fulfill the sealed notice", "keep the route intact"],
-    action: "deliver",
-    locationId: "town-hall",
-    reason: "Jamie Allen's notice is due before noon",
-    status: "Taking the direct route",
-    mood: "Determined",
-    obligationDecision: {
-      obligationId: "obligation-sal-vey-notice",
-      choice: "fulfill",
-      note: "The direct route is still possible.",
-    },
-    socialIntentions: [],
+    obligationId: "obligation-sal-vey-notice",
+    choice: "fulfill",
+    note: "The direct route is still possible.",
     ...overrides,
   });
 }
@@ -74,7 +65,7 @@ test("the DeepSeek adapter sends a bounded JSON decision request", async () => {
   assert.equal(request.init.headers.authorization, "Bearer test-key");
   assert.equal(body.response_format.type, "json_object");
   assert.deepEqual(body.thinking, { type: "disabled" });
-  assert.equal(body.max_tokens, 260);
+  assert.equal(body.max_tokens, 120);
   assert.equal(body.stream, false);
   assert.equal(body.messages[0].role, "system");
   assert.equal(body.messages[1].role, "user");
@@ -84,12 +75,38 @@ test("the DeepSeek adapter sends a bounded JSON decision request", async () => {
   assert.equal(body.messages[1].content.includes("Rookwood"), false);
   assert.equal(plan.source, "model");
   assert.equal(plan.actions[0].action, "deliver");
+  assert.ok(plan.actions.length > 1);
+  assert.ok(plan.actions.some(({ action }) => action === "rest"));
   assert.equal(plan.obligationDecision.choice, "fulfill");
   assert.equal(plan.modelTelemetry.promptTokens, 420);
   assert.equal(plan.modelTelemetry.completionTokens, 96);
   assert.equal(plan.modelTelemetry.promptCacheHitTokens, 120);
   assert.equal(plan.modelTelemetry.promptCacheMissTokens, 300);
   assert.equal(plan.modelTelemetry.requestId, "chatcmpl-calder-test");
+});
+
+test("the model may choose an outcome but may not author world actions", async () => {
+  const input = modelInput();
+  await assert.rejects(
+    createDeepSeekPlan({
+      ...input,
+      env,
+      fetchImpl: async () => new Response(JSON.stringify(payload(fixtureContent({
+        action: "deliver",
+      })))),
+    }),
+    (error) => error.code === "invalid_choice_shape",
+  );
+  await assert.rejects(
+    createDeepSeekPlan({
+      ...input,
+      env,
+      fetchImpl: async () => new Response(JSON.stringify(payload(fixtureContent({
+        obligationId: "stale-obligation",
+      })))),
+    }),
+    (error) => error.code === "stale_obligation",
+  );
 });
 
 test("provider errors become typed failures for the deterministic fallback", async () => {

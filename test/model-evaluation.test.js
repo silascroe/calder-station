@@ -12,9 +12,6 @@ function modelResponse(body, index) {
   const context = JSON.parse(prompt.slice(prompt.indexOf("\n") + 1));
   const delay = context.resident.energy < 30 || context.resident.hunger >= 94;
   const choice = delay ? "report_delay" : "fulfill";
-  const legalChoice = context.legalChoices.find((candidate) => candidate.choice === choice);
-  const action = legalChoice.action;
-  const locationId = legalChoice.locationId;
   return {
     id: `chatcmpl-evaluation-${index}`,
     model: "deepseek-v4-flash",
@@ -22,18 +19,9 @@ function modelResponse(body, index) {
       finish_reason: "stop",
       message: {
         content: JSON.stringify({
-          priorities: [delay ? "protect the route" : "carry the notice"],
-          action,
-          locationId,
-          reason: delay ? "Ordinary needs make the detour unsafe." : "The notice can still be carried.",
-          status: delay ? "Reporting a delay" : "Taking the direct route",
-          mood: delay ? "Uneasy" : "Determined",
-          obligationDecision: {
-            obligationId: context.obligation.id,
-            choice,
-            note: delay ? "The route would unravel." : "The route remains possible.",
-          },
-          socialIntentions: [],
+          obligationId: context.obligation.id,
+          choice,
+          note: delay ? "The route would unravel." : "The route remains possible.",
         }),
       },
     }],

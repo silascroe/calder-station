@@ -184,18 +184,9 @@ test("a due Sal decision uses one model plan and records its usage", async () =>
           finish_reason: "stop",
           message: {
             content: JSON.stringify({
-              priorities: ["fulfill the sealed notice", "keep the route intact"],
-              action: "deliver",
-              locationId: "town-hall",
-              reason: "The notice is due before noon.",
-              status: "Taking the direct route",
-              mood: "Determined",
-              obligationDecision: {
-                obligationId: "obligation-sal-vey-notice",
-                choice: "fulfill",
-                note: "The direct route is still possible.",
-              },
-              socialIntentions: [],
+              obligationId: "obligation-sal-vey-notice",
+              choice: "fulfill",
+              note: "The direct route is still possible.",
             }),
           },
         }],
@@ -218,6 +209,7 @@ test("a due Sal decision uses one model plan and records its usage", async () =>
   assert.equal(state.stats.modelCompletionTokens, 80);
   assert.equal(state.obligations[0].status, "fulfilled");
   assert.equal(state.residents.find(({ id }) => id === "sal").dailyPlan.source, "model");
+  assert.ok(state.residents.find(({ id }) => id === "sal").dailyPlan.actions.length > 1);
   assert.equal(requestContext.town.now, "2026-08-31T00:30:00.000Z");
   assert.equal(requestContext.resident.energy, 86);
   assert.equal(requestContext.resident.hunger, 23);

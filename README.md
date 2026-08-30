@@ -36,7 +36,7 @@ The authored world currently contains:
 - non-monotonic relationships with tension, repair, and diminishing gains
 - a read-only folio UI with a town register, map, resident pages, histories, and portraits
 
-Most decisions are still scripted on purpose. The current model experiment is deliberately narrow: **Sal D'Amico** can use DeepSeek when deciding what to do about an open commitment, including **Jamie Allen's notice** and a recurring route-report chain that can compete for his time. The model gets compact context and must return a legal structured choice. If it times out, fails validation, or returns nonsense, deterministic fallback rules take over.
+Most decisions are still scripted on purpose. The current model experiment is deliberately narrow: **Sal D'Amico** can use DeepSeek when deciding what to do about an open commitment, including **Jamie Allen's notice** and a recurring route-report chain that can compete for his time. The model gets compact context and may return only the obligation ID, a legal choice, and a short note. Deterministic code composes the complete daily queue and owns all timing, movement, needs, and consequences. If the request times out, fails validation, or returns nonsense, scripted fallback rules take over.
 
 This is still an experiment, not a finished artificial society. The current phase is about finding out whether a small world can remain coherent and interesting over long spans of simulated time before adding more people, more model calls, or more machinery.
 

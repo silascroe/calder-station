@@ -58,17 +58,30 @@ export function openObligationFor(state, residentId) {
 }
 
 /**
- * Scripted fallback for the model experiment. It makes a concrete choice so
- * the town remains playable even when DeepSeek is unavailable.
+ * Turn one bounded obligation choice into a complete legal day. The planner
+ * may choose the outcome and explain it, but code owns actions, destinations,
+ * timing, routine continuity, and every eventual consequence.
  */
-export function scriptedObligationPlan({ town, resident, now } = {}) {
-  const base = scriptedDailyPlan({ town, resident, now });
-  const obligation = openObligationFor(town, resident.id);
-  if (!obligation) return base;
+export function obligationPlanForChoice({
+  town,
+  resident,
+  now,
+  obligation,
+  choice,
+  note,
+  source = "scripted",
+} = {}) {
+  if (!obligation || obligation.status !== "open" || obligation.ownerId !== resident?.id) {
+    throw new RangeError("Obligation is no longer open for this resident");
+  }
+  if (!OBLIGATION_CHOICES.includes(choice)) {
+    throw new RangeError(`Unsupported obligation choice: ${choice}`);
+  }
 
-  const canTakeDirectRoute = resident.energy > 35 && resident.hunger < 94;
+  const base = scriptedDailyPlan({ town, resident, now });
   const requiredAction = obligation.requiredAction ?? "deliver";
-  const action = canTakeDirectRoute
+  const fulfilling = choice === "fulfill";
+  const action = fulfilling
     ? {
       ...base.actions[0],
       action: requiredAction,
@@ -83,28 +96,50 @@ export function scriptedObligationPlan({ town, resident, now } = {}) {
       action: "observe",
       locationId: resident.locationId,
       offsetMinutes: 0,
-      reason: "energy is too low to make the promised detour",
+      reason: "the commitment cannot take priority this time",
       status: "Reporting a delay",
       mood: "Uneasy",
     };
+  const actions = [action, ...base.actions.slice(1, MAX_PLAN_ACTIONS)];
+  const socialIntentions = base.socialIntentions.filter((intention) => {
+    const actionIndex = intention.actionIndex ?? 0;
+    return actions[actionIndex]?.locationId === intention.locationId;
+  });
 
   return {
     ...base,
+    source,
     priorities: [
-      canTakeDirectRoute ? `fulfill ${obligation.title}` : `report a delay on ${obligation.title}`,
+      fulfilling ? `fulfill ${obligation.title}` : `report a delay on ${obligation.title}`,
       "keep the regular route from unraveling",
     ],
-    // Keep the commitment from erasing the resident's ordinary meals and
-    // return home. The obligation owns the immediate slot; routine actions
-    // still get the remaining bounded queue capacity.
-    actions: [action, ...base.actions.slice(1, MAX_PLAN_ACTIONS)],
-    socialIntentions: [],
+    actions,
+    socialIntentions,
     obligationDecision: {
       obligationId: obligation.id,
-      choice: canTakeDirectRoute ? "fulfill" : "report_delay",
-      note: canTakeDirectRoute ? "the promised work is still possible" : "the detour would risk the rest of the day",
+      choice,
+      note,
     },
   };
+}
+
+/**
+ * Scripted fallback for the model experiment. It makes a concrete choice so
+ * the town remains playable even when DeepSeek is unavailable.
+ */
+export function scriptedObligationPlan({ town, resident, now } = {}) {
+  const obligation = openObligationFor(town, resident.id);
+  if (!obligation) return scriptedDailyPlan({ town, resident, now });
+
+  const canTakeDirectRoute = resident.energy > 35 && resident.hunger < 94;
+  return obligationPlanForChoice({
+    town,
+    resident,
+    now,
+    obligation,
+    choice: canTakeDirectRoute ? "fulfill" : "report_delay",
+    note: canTakeDirectRoute ? "the promised work is still possible" : "the detour would risk the rest of the day",
+  });
 }
 
 /** Apply the consequence of a validated obligation choice. */
