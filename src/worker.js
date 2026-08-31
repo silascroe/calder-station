@@ -6,9 +6,12 @@ import {
 } from "./simulation.js";
 import { RookwoodTown, townStorageKey } from "./town-do.js";
 import {
+  combineModelSeasonResults,
   MODEL_EVALUATION_REVISION,
-  runModelEvaluation,
+  runModelSeasonAssisted,
+  runModelSeasonBaseline,
 } from "./model-evaluation.js";
+import { DEFAULT_DEEPSEEK_MODEL } from "./deepseek-planner.js";
 
 export { RookwoodTown };
 
@@ -16,6 +19,7 @@ const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
 };
+const BASELINE_LEASE_MS = 20 * 60 * 1000;
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -88,7 +92,9 @@ async function storeEvaluation(stub, report) {
 
 export async function runScheduledModelEvaluation(env, {
   wallClock = new Date(),
-  includeLongHorizon = true,
+  days = 90,
+  baselineRunner = runModelSeasonBaseline,
+  assistedRunner = runModelSeasonAssisted,
 } = {}) {
   if (env?.TOWN_ENV !== "staging") return { status: "skipped-non-staging" };
   if (!persistentBindingReady(env)) throw new Error("Staging model evaluation requires the TOWN binding");
@@ -97,7 +103,11 @@ export async function runScheduledModelEvaluation(env, {
   const currentResponse = await stub.fetch(new Request("https://town.internal/evaluation"));
   if (!currentResponse.ok) throw new Error(`Could not read model evaluation: HTTP ${currentResponse.status}`);
   const current = await currentResponse.json();
-  if (current.revision === revision && ["complete", "failed", "running"].includes(current.status)) return current;
+  if (current.revision === revision && ["complete", "failed", "assisted-running"].includes(current.status)) return current;
+  if (current.revision === revision && current.status === "baseline-running") {
+    const leaseAge = new Date(wallClock).getTime() - new Date(current.startedAt).getTime();
+    if (Number.isFinite(leaseAge) && leaseAge < BASELINE_LEASE_MS) return current;
+  }
 
   if (!env.DEEPSEEK_API_KEY) {
     const blocked = {
@@ -110,22 +120,88 @@ export async function runScheduledModelEvaluation(env, {
     return blocked;
   }
 
+  const checkedAt = new Date(wallClock).toISOString();
+  if (current.revision !== revision || current.status !== "baseline-complete") {
+    await storeEvaluation(stub, {
+      kind: "calder-station-model-evaluation",
+      revision,
+      status: "baseline-running",
+      startedAt: checkedAt,
+      phase: "scripted-baseline",
+      paidCallsAtRisk: 0,
+    });
+    let baseline;
+    try {
+      baseline = await baselineRunner({ days });
+    } catch (error) {
+      const failed = {
+        kind: "calder-station-model-evaluation",
+        revision,
+        status: "failed",
+        phase: "scripted-baseline",
+        checkedAt,
+        error: error?.name ?? "EvaluationError",
+      };
+      await storeEvaluation(stub, failed);
+      return failed;
+    }
+    const checkpoint = {
+      kind: "calder-station-model-evaluation",
+      revision,
+      status: "baseline-complete",
+      phase: "awaiting-model-season",
+      checkedAt,
+      baseline,
+    };
+    await storeEvaluation(stub, checkpoint);
+    return checkpoint;
+  }
+
   await storeEvaluation(stub, {
-    kind: "calder-station-model-evaluation",
-    revision,
-    status: "running",
-    startedAt: new Date(wallClock).toISOString(),
+    ...current,
+    status: "assisted-running",
+    phase: "model-assisted-season",
+    assistedStartedAt: checkedAt,
+    paidCallsAtRisk: 1,
   });
 
   let report;
   try {
-    report = await runModelEvaluation({ env, wallClock, revision, includeLongHorizon });
+    const assisted = await assistedRunner({
+      env,
+      fetchImpl: env?.DEEPSEEK_FETCH ?? globalThis.fetch,
+      wallClock,
+      days,
+    });
+    const longHorizon = combineModelSeasonResults({ baseline: current.baseline, assisted, wallClock, days });
+    const model = assisted.model ?? {};
+    const calls = Number(model.attempts ?? 0);
+    const fallbackCount = Number(model.fallbacks ?? 0);
+    report = {
+      kind: "calder-station-model-evaluation",
+      revision,
+      status: "complete",
+      requestedAt: current.startedAt ?? current.checkedAt ?? checkedAt,
+      completedAt: new Date().toISOString(),
+      model: env.DEEPSEEK_MODEL ?? DEFAULT_DEEPSEEK_MODEL,
+      calls,
+      matrixCalls: 0,
+      successfulModelPlans: Number(model.calls ?? 0),
+      fallbackCount,
+      fallbackRate: calls === 0 ? 0 : fallbackCount / calls,
+      choices: assisted.selectedObligationId ? { [assisted.selectedObligationId]: 1 } : {},
+      promptTokens: Number(model.promptTokens ?? 0),
+      completionTokens: Number(model.completionTokens ?? 0),
+      estimatedCostUsd: longHorizon.estimatedCostUsd,
+      longHorizon,
+    };
   } catch (error) {
     report = {
       kind: "calder-station-model-evaluation",
       revision,
       status: "failed",
-      checkedAt: new Date(wallClock).toISOString(),
+      phase: "model-assisted-season",
+      checkedAt,
       error: error?.name ?? "EvaluationError",
     };
   }

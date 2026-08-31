@@ -67,6 +67,12 @@ DeepSeek chose the civic route in every equal-deadline case, including large tru
 
 The complete v6 report is retained in GitHub Actions run `33330261982`.
 
+## `sal-season-comparison-v7-2026-08-30`
+
+The cron started this combined matrix-and-season revision at 2026-08-30 19:30:53 UTC and durably wrote `running`, but the invocation ended without a terminal report. GitHub Actions timed out after twenty minutes. The exact provider-call count and token use are therefore unknown and must not be invented from a missing report. The lease correctly prevented an automatic paid retry.
+
+The failure exposed an evaluation-boundary mistake: a repeated 24-call matrix and two full 90-day histories should not share one scheduled invocation. The matrix had already answered its question in v6. Rebuying it added cost and invocation pressure without new evidence.
+
 ## Next revision
 
-`sal-season-comparison-v7-2026-08-30` retains the 24 physical-conflict cases and adds a clean 90-day scripted-versus-DeepSeek comparison through the same runner. One physically impossible Day-1 conflict is the only paid decision; all later divergence comes from deterministic obligations, civic follow-ups, relationships, travel, needs, and queues. Genuine results are pending isolated staging deployment.
+`sal-resumable-season-v8-2026-08-31` runs only the unresolved experiment. One cron invocation stores the no-cost scripted baseline; a later invocation leases and runs the model-assisted season with exactly one eligible model decision. A stale baseline can retry safely. A stranded assisted lease remains terminal. This keeps both runs on the authoritative engine while making the expensive boundary resumable and auditable.

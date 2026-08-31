@@ -33,7 +33,8 @@ Success means a fresh staging Calder Station can run for 90 simulated days, prod
 - `main` now automatically deploys disposable staging after the test gate; production remains manual. This removes the recurring evaluation bottleneck without allowing code pushes to touch canonical production state.
 - The Folio now names the specific commitment chosen by DeepSeek or fallback rules, shows the bounded decision note, and traces follow-up journal entries back to the prior promise without exposing engineering counters.
 - Staging checks its terminal-guarded paid-evaluation revision every 15 minutes so deliberate experiments do not wait nearly an hour; production still has no evaluation trigger.
-- Staging deployments now wait for and record the terminal real-model report; blocked, failed, or timed-out evaluation makes the deployment visibly fail instead of leaving paid-system verification as an informal follow-up.
+- Staging deployments wait for and record the terminal real-model report; blocked, failed, or timed-out evaluation makes the deployment visibly fail instead of leaving paid-system verification as an informal follow-up.
+- The combined v7 matrix-and-season invocation stranded its `running` lease. V8 removes the already-answered matrix from scheduled work, checkpoints the free baseline in one cron phase, and leases the one-call assisted season in a later phase. Free work may recover from a stale lease; paid work never retries blindly.
 - Resident schedules now span the fictional day independently of provider price windows. Persistent operation explicitly pauses on downtime, guards alarm retries against double advancement, and guards exact planning instants against duplicate model spend. The paid evaluator writes a running lease and never auto-retries a failed or interrupted revision.
 - Caught alarm failures are health-visible and schedule a fresh attempt one hour later, so Cloudflare's finite automatic retry budget cannot quietly stop the town forever.
 
@@ -45,9 +46,9 @@ The action queue is intentionally finite: each plan has at most five actions, ea
 
 ## Next useful work
 
-1. Run the v7 paid matrix plus genuine 90-day model-assisted comparison and inspect causal divergence at Days 1, 7, 30, and 90.
-2. Decide from those results whether Calder Station needs a narrow incident source capable of producing occasional real conflicts in ordinary long-horizon play.
-3. Reassess whether renewable notices repair consequences too quickly for a Day-1 choice to remain personally legible by Day 90.
+1. Complete the v8 genuine 90-day model-assisted comparison and inspect causal divergence at Days 1, 7, 30, and 90.
+2. Preserve important personal turning points beyond the newest town-wide event page so old consequences remain visible in resident dossiers.
+3. Decide from evidence—not a manufactured incident—whether ordinary long-horizon play needs another source of genuine conflicts.
 
 ## Deferred
 

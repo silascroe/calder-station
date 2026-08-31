@@ -32,7 +32,7 @@
       "name": "town-dashboard-staging",
       "vars": {
         "TOWN_ENV": "staging",
-        "MODEL_EVALUATION_REVISION": "sal-season-comparison-v7-2026-08-30"
+        "MODEL_EVALUATION_REVISION": "sal-resumable-season-v8-2026-08-31"
       },
       "triggers": {
         "crons": ["*/15 * * * *"]

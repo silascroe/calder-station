@@ -7,7 +7,7 @@ import { runScenario } from "./scenario-runner.js";
 
 const MINUTE_MS = 60 * 1000;
 
-export const MODEL_EVALUATION_REVISION = "sal-season-comparison-v7-2026-08-30";
+export const MODEL_EVALUATION_REVISION = "sal-resumable-season-v8-2026-08-31";
 export const MODEL_EVALUATION_REPETITIONS = 3;
 export const MODEL_EVALUATION_CONCURRENCY = 3;
 
@@ -249,48 +249,67 @@ function compactSeasonResult(run) {
   };
 }
 
-export async function runModelLongHorizonComparison({
+function seasonScenarioOptions(days) {
+  const checkpoints = [1, 7, 30, 90].filter((day) => day <= days);
+  if (!checkpoints.includes(days)) checkpoints.push(days);
+  return {
+    days,
+    checkpoints,
+    seed: "calder-station-model-season",
+    prepareState: prepareSeasonConflict,
+  };
+}
+
+export async function runModelSeasonBaseline({ days = 90 } = {}) {
+  return compactSeasonResult(await runScenario(seasonScenarioOptions(days)));
+}
+
+export async function runModelSeasonAssisted({
   env,
   fetchImpl = env?.DEEPSEEK_FETCH ?? globalThis.fetch,
   wallClock = new Date(),
   days = 90,
 } = {}) {
   if (!env?.DEEPSEEK_API_KEY) throw new Error("DEEPSEEK_API_KEY is required for paid model evaluation");
-  const checkpoints = [1, 7, 30, 90].filter((day) => day <= days);
-  if (!checkpoints.includes(days)) checkpoints.push(days);
-  const shared = {
-    days,
-    checkpoints,
-    seed: "calder-station-model-season",
-    prepareState: prepareSeasonConflict,
-  };
-  const baseline = await runScenario(shared);
-  const assisted = await runScenario({
-    ...shared,
+  return compactSeasonResult(await runScenario({
+    ...seasonScenarioOptions(days),
     decisionAdapter: (input) => planResidentDecision(input, {
       env,
       fetchImpl,
       wallClock,
       bypassPeakPricing: true,
     }),
-  });
-  const compactBaseline = compactSeasonResult(baseline);
-  const compactAssisted = compactSeasonResult(assisted);
+  }));
+}
+
+export function combineModelSeasonResults({ baseline, assisted, wallClock = new Date(), days = 90 } = {}) {
+  if (!baseline || !assisted) throw new TypeError("baseline and assisted season results are required");
   return {
     kind: "calder-station-model-season-comparison",
     days,
-    baseline: compactBaseline,
-    assisted: compactAssisted,
+    baseline,
+    assisted,
     divergence: {
-      selectedObligationId: compactAssisted.selectedObligationId,
-      eventDelta: compactAssisted.events - compactBaseline.events,
-      fulfilledDelta: compactAssisted.obligations.fulfilled - compactBaseline.obligations.fulfilled,
-      brokenDelta: compactAssisted.obligations.broken - compactBaseline.obligations.broken,
-      jamieSalStrengthDelta: compactAssisted.relationships.jamieSal.strength - compactBaseline.relationships.jamieSal.strength,
-      amosSalStrengthDelta: compactAssisted.relationships.amosSal.strength - compactBaseline.relationships.amosSal.strength,
+      selectedObligationId: assisted.selectedObligationId,
+      eventDelta: assisted.events - baseline.events,
+      fulfilledDelta: assisted.obligations.fulfilled - baseline.obligations.fulfilled,
+      brokenDelta: assisted.obligations.broken - baseline.obligations.broken,
+      jamieSalStrengthDelta: assisted.relationships.jamieSal.strength - baseline.relationships.jamieSal.strength,
+      amosSalStrengthDelta: assisted.relationships.amosSal.strength - baseline.relationships.amosSal.strength,
     },
-    estimatedCostUsd: estimateDeepSeekCost(compactAssisted.model, wallClock),
+    estimatedCostUsd: estimateDeepSeekCost(assisted.model, wallClock),
   };
+}
+
+export async function runModelLongHorizonComparison({
+  env,
+  fetchImpl = env?.DEEPSEEK_FETCH ?? globalThis.fetch,
+  wallClock = new Date(),
+  days = 90,
+} = {}) {
+  const baseline = await runModelSeasonBaseline({ days });
+  const assisted = await runModelSeasonAssisted({ env, fetchImpl, wallClock, days });
+  return combineModelSeasonResults({ baseline, assisted, wallClock, days });
 }
 
 async function mapWithConcurrency(items, concurrency, mapper) {

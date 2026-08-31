@@ -15,8 +15,10 @@ function response(report) {
 test("the post-deploy check waits for the bounded evaluation report", async () => {
   const reports = [
     { revision, status: "pending" },
-    { revision, status: "running" },
-    { revision, status: "complete", calls: 24, fallbackCount: 0 },
+    { revision, status: "baseline-running" },
+    { revision, status: "baseline-complete" },
+    { revision, status: "assisted-running" },
+    { revision, status: "complete", calls: 1, fallbackCount: 0 },
   ];
   let clock = 0;
   const result = await waitForModelEvaluation({
@@ -30,8 +32,8 @@ test("the post-deploy check waits for the bounded evaluation report", async () =
   });
 
   assert.equal(result.status, "complete");
-  assert.equal(result.calls, 24);
-  assert.equal(clock, 20);
+  assert.equal(result.calls, 1);
+  assert.equal(clock, 40);
 });
 
 test("the post-deploy check fails loudly on a terminal evaluation error", async () => {

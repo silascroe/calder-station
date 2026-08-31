@@ -166,9 +166,19 @@ export function obligationPlanForChoice({
  */
 export function scriptedObligationPlan({ town, resident, now } = {}) {
   const due = obligationsBeforeNextTurn(town, resident, now);
-  const obligation = due.length > 1
-    ? bestObligationOrder(town, resident, due, now).order[0]
-    : openObligationFor(town, resident.id);
+  const route = due.length > 1 ? bestObligationOrder(town, resident, due, now) : null;
+  const strainedFirst = route && !route.projection.allMeet
+    ? [...due].sort((left, right) => {
+      const leftRelationship = relationshipBetween(town, left.ownerId, left.counterpartyId);
+      const rightRelationship = relationshipBetween(town, right.ownerId, right.counterpartyId);
+      const leftPressure = (100 - (leftRelationship?.strength ?? 0)) + (leftRelationship?.tension ?? 0);
+      const rightPressure = (100 - (rightRelationship?.strength ?? 0)) + (rightRelationship?.tension ?? 0);
+      return rightPressure - leftPressure
+        || String(left.dueAt).localeCompare(String(right.dueAt))
+        || left.id.localeCompare(right.id);
+    })[0]
+    : null;
+  const obligation = strainedFirst ?? route?.order[0] ?? openObligationFor(town, resident.id);
   if (!obligation) return scriptedDailyPlan({ town, resident, now });
 
   const canTakeDirectRoute = resident.energy > 35 && resident.hunger < 94;
@@ -178,7 +188,9 @@ export function scriptedObligationPlan({ town, resident, now } = {}) {
     now,
     obligation,
     choice: canTakeDirectRoute ? "fulfill" : "report_delay",
-    note: canTakeDirectRoute ? "the promised work is still possible" : "the detour would risk the rest of the day",
+    note: canTakeDirectRoute
+      ? strainedFirst ? "the more strained promise needs protection" : "the promised work is still possible"
+      : "the detour would risk the rest of the day",
   });
 }
 

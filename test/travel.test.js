@@ -54,5 +54,10 @@ test("the feasibility solver distinguishes a true conflict and queues the losing
 
   const plan = scriptedObligationPlan({ town, resident, now });
   assert.equal(plan.obligationDecisions.length, 2);
+  assert.equal(plan.obligationDecision.obligationId, "travel-test-route");
   assert.deepEqual(new Set(plan.obligationDecisions.map(({ obligationId }) => obligationId)), new Set(obligations.map(({ id }) => id)));
+
+  town.relationships.find(({ id }) => id === "rel-vey-sal").tension = 30;
+  const rebalanced = scriptedObligationPlan({ town, resident, now });
+  assert.equal(rebalanced.obligationDecision.obligationId, "obligation-sal-vey-notice");
 });

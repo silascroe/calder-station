@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import { MODEL_EVALUATION_REVISION } from "../src/model-evaluation.js";
 
-const DEFAULT_TIMEOUT_MS = 20 * 60 * 1000;
+const DEFAULT_TIMEOUT_MS = 45 * 60 * 1000;
 const DEFAULT_POLL_MS = 15 * 1000;
 
 function argument(name) {
@@ -51,7 +51,7 @@ export async function waitForModelEvaluation({
     if (["failed", "blocked-missing-key"].includes(report.status)) {
       throw new Error(`Evaluation ended with status ${report.status}${report.error ? ` (${report.error})` : ""}`);
     }
-    if (!["pending", "running"].includes(report.status)) {
+    if (!["pending", "baseline-running", "baseline-complete", "assisted-running"].includes(report.status)) {
       throw new Error(`Evaluation returned unsupported status ${report.status ?? "missing"}`);
     }
     await sleepImpl(pollMs);

@@ -258,7 +258,7 @@ test("a due Sal decision uses one model plan and records its usage", async () =>
   assert.equal(state.stats.modelFallbacks, 0);
   assert.equal(state.stats.modelPromptTokens, 400);
   assert.equal(state.stats.modelCompletionTokens, 80);
-  assert.equal(state.obligations[0].status, "fulfilled");
+  assert.equal(state.obligations.find(({ id }) => id === "obligation-sal-vey-notice").status, "fulfilled");
   assert.equal(state.residents.find(({ id }) => id === "sal").dailyPlan.source, "model");
   assert.ok(state.residents.find(({ id }) => id === "sal").dailyPlan.actions.length > 1);
   assert.equal(requestContext.town.now, "2026-08-31T00:30:00.000Z");
@@ -290,7 +290,12 @@ test("a failed model request falls back without stopping the town", async () => 
   assert.equal(state.stats.modelCalls, 0);
   assert.equal(state.stats.modelAttempts, 1);
   assert.equal(state.stats.modelFallbacks, 1);
-  assert.equal(state.obligations[0].status, "fulfilled");
+  assert.equal(state.obligations.find(({ id }) => id === "obligation-sal-vey-notice").status, "broken");
+  assert.equal(state.obligations.find(({ id }) => id === "test-sal-route-report").status, "fulfilled");
+  assert.equal(
+    state.residents.find(({ id }) => id === "sal").dailyPlan.obligationDecision.obligationId,
+    "test-sal-route-report",
+  );
   assert.equal(state.residents.find(({ id }) => id === "sal").dailyPlan.model.fallback, true);
   assert.ok(events.some((event) => event.type === "model-fallback" && event.reason === "network_error"));
 });

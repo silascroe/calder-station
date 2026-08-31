@@ -117,8 +117,8 @@ test("staging exposes a read-only evaluation report without a public trigger", a
   assert.equal(mutation.status, 405);
 });
 
-test("the scheduled evaluator never automatically repeats a terminal or in-flight revision", async () => {
-  for (const status of ["complete", "failed", "running"]) {
+test("the scheduled evaluator never automatically repeats a terminal or paid in-flight revision", async () => {
+  for (const status of ["complete", "failed", "assisted-running"]) {
     let reads = 0;
     const report = { revision: "evaluation-test", status, calls: 24 };
     const env = {
@@ -141,31 +141,111 @@ test("the scheduled evaluator never automatically repeats a terminal or in-fligh
   assert.deepEqual(await runScheduledModelEvaluation({ TOWN_ENV: "production" }), { status: "skipped-non-staging" });
 });
 
-test("the scheduled evaluator stores a running lease before provider calls", async () => {
+function seasonResult({ selectedObligationId, calls = 0 } = {}) {
+  return {
+    healthy: true,
+    events: 100,
+    obligations: { fulfilled: 3, broken: 1 },
+    relationships: {
+      jamieSal: { strength: 60 },
+      amosSal: { strength: 50 },
+    },
+    model: {
+      calls,
+      attempts: calls,
+      fallbacks: 0,
+      promptTokens: calls * 400,
+      completionTokens: calls * 40,
+    },
+    selectedObligationId,
+  };
+}
+
+test("the scheduled evaluator checkpoints the free baseline before leasing one paid season call", async () => {
   const writes = [];
-  let providerCalls = 0;
+  let current = { revision: "older-evaluation", status: "complete" };
   const stub = {
     fetch: async (request) => {
       if (request.method === "POST") {
-        writes.push(await request.json());
+        current = await request.json();
+        writes.push(current);
         return new Response(JSON.stringify({ ok: true }));
       }
-      return new Response(JSON.stringify({ revision: "evaluation-test", status: "pending" }));
+      return new Response(JSON.stringify(current));
     },
   };
-  const report = await runScheduledModelEvaluation({
+  const env = {
     TOWN_ENV: "staging",
     MODEL_EVALUATION_REVISION: "evaluation-test",
     DEEPSEEK_API_KEY: "test-key",
-    DEEPSEEK_FETCH: async () => {
-      providerCalls += 1;
-      throw new Error("provider unavailable");
-    },
     TOWN: { getByName: () => stub },
-  }, { wallClock: new Date("2026-08-31T00:00:00.000Z"), includeLongHorizon: false });
+  };
+  const baseline = seasonResult({ selectedObligationId: "obligation-sal-vey-notice" });
+  const assisted = seasonResult({ selectedObligationId: "evaluation-season-route-report", calls: 1 });
 
-  assert.equal(providerCalls, 24);
-  assert.equal(writes[0].status, "running");
+  const checkpoint = await runScheduledModelEvaluation(env, {
+    wallClock: new Date("2026-08-31T00:00:00.000Z"),
+    baselineRunner: async () => baseline,
+  });
+  assert.equal(checkpoint.status, "baseline-complete");
+  assert.deepEqual(checkpoint.baseline, baseline);
+  assert.deepEqual(writes.map(({ status }) => status), ["baseline-running", "baseline-complete"]);
+
+  const report = await runScheduledModelEvaluation(env, {
+    wallClock: new Date("2026-08-31T00:15:00.000Z"),
+    assistedRunner: async () => assisted,
+  });
+
+  assert.deepEqual(writes.map(({ status }) => status), [
+    "baseline-running",
+    "baseline-complete",
+    "assisted-running",
+    "complete",
+  ]);
   assert.equal(writes.at(-1).status, "complete");
-  assert.equal(report.fallbackCount, 24);
+  assert.equal(report.calls, 1);
+  assert.equal(report.matrixCalls, 0);
+  assert.equal(report.longHorizon.baseline.selectedObligationId, "obligation-sal-vey-notice");
+  assert.equal(report.longHorizon.assisted.selectedObligationId, "evaluation-season-route-report");
+});
+
+test("an expired free baseline lease may retry without risking a duplicate provider call", async () => {
+  let current = {
+    revision: "evaluation-test",
+    status: "baseline-running",
+    startedAt: "2026-08-31T00:00:00.000Z",
+  };
+  let baselineRuns = 0;
+  const stub = {
+    fetch: async (request) => {
+      if (request.method === "POST") {
+        current = await request.json();
+        return new Response(JSON.stringify({ ok: true }));
+      }
+      return new Response(JSON.stringify(current));
+    },
+  };
+  const env = {
+    TOWN_ENV: "staging",
+    MODEL_EVALUATION_REVISION: "evaluation-test",
+    DEEPSEEK_API_KEY: "test-key",
+    TOWN: { getByName: () => stub },
+  };
+
+  const fresh = await runScheduledModelEvaluation(env, {
+    wallClock: new Date("2026-08-31T00:10:00.000Z"),
+    baselineRunner: async () => { baselineRuns += 1; },
+  });
+  assert.equal(fresh.status, "baseline-running");
+  assert.equal(baselineRuns, 0);
+
+  const recovered = await runScheduledModelEvaluation(env, {
+    wallClock: new Date("2026-08-31T00:25:00.000Z"),
+    baselineRunner: async () => {
+      baselineRuns += 1;
+      return seasonResult({ selectedObligationId: "obligation-sal-vey-notice" });
+    },
+  });
+  assert.equal(recovered.status, "baseline-complete");
+  assert.equal(baselineRuns, 1);
 });

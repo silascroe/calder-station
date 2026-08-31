@@ -87,7 +87,7 @@ test("a genuine adapter can create a causal multi-day divergence through the sam
       calls += 1;
       const body = JSON.parse(init.body);
       const context = JSON.parse(body.messages.at(-1).content.split("\n").slice(1).join("\n"));
-      const selected = context.legalChoices.find(({ obligationId }) => obligationId === "evaluation-season-route-report");
+      const selected = context.legalChoices.find(({ obligationId }) => obligationId === "obligation-sal-vey-notice");
       return new Response(JSON.stringify({
         id: `chatcmpl-season-${calls}`,
         model: "deepseek-v4-flash",
@@ -96,7 +96,7 @@ test("a genuine adapter can create a causal multi-day divergence through the sam
           message: { content: JSON.stringify({
             obligationId: selected.obligationId,
             choice: "fulfill",
-            note: "The closing round should survive this conflict.",
+            note: "The sealed notice should survive this conflict.",
           }) },
         }],
         usage: { prompt_tokens: 700, completion_tokens: 40, total_tokens: 740 },
@@ -105,13 +105,13 @@ test("a genuine adapter can create a causal multi-day divergence through the sam
   });
 
   assert.equal(calls, 1);
-  assert.equal(report.baseline.selectedObligationId, "obligation-sal-vey-notice");
-  assert.equal(report.assisted.selectedObligationId, "evaluation-season-route-report");
+  assert.equal(report.baseline.selectedObligationId, "evaluation-season-route-report");
+  assert.equal(report.assisted.selectedObligationId, "obligation-sal-vey-notice");
   assert.equal(report.assisted.model.calls, 1);
   assert.equal(report.assisted.model.fallbacks, 0);
   assert.equal(report.baseline.healthy, true);
   assert.equal(report.assisted.healthy, true);
-  assert.notEqual(report.divergence.amosSalStrengthDelta, 0);
+  assert.notEqual(report.divergence.jamieSalStrengthDelta, 0);
 });
 
 test("cost estimates use the injected peak schedule and reported cache split", () => {
