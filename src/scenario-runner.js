@@ -479,24 +479,31 @@ function normalizeCheckpoints(checkpoints, days) {
   return values;
 }
 
-export async function runScenario({
-  days = 90,
-  checkpoints,
-  seed = "calder-station-long-horizon",
-  startTime = DEFAULT_START_TIME,
-  tickMinutes = DAY_MINUTES,
-  seedData = townSeed,
-  decisionAdapter = scriptedObligationPlan,
-  prepareState = null,
-} = {}) {
+function validateScenarioOptions({ days, tickMinutes, decisionAdapter, prepareState }) {
   if (!Number.isInteger(days) || days < 1 || days > MAX_SCENARIO_DAYS) {
     throw new RangeError(`days must be an integer between 1 and ${MAX_SCENARIO_DAYS}`);
   }
   if (!Number.isInteger(tickMinutes) || tickMinutes < 1 || tickMinutes > DAY_MINUTES || DAY_MINUTES % tickMinutes !== 0) {
     throw new RangeError("tickMinutes must divide a simulated day and be between 1 and 1440");
   }
-  if (typeof decisionAdapter !== "function") throw new TypeError("decisionAdapter must be a function");
-  if (prepareState !== null && typeof prepareState !== "function") throw new TypeError("prepareState must be a function");
+  if (decisionAdapter !== undefined && typeof decisionAdapter !== "function") {
+    throw new TypeError("decisionAdapter must be a function");
+  }
+  if (prepareState !== null && prepareState !== undefined && typeof prepareState !== "function") {
+    throw new TypeError("prepareState must be a function");
+  }
+}
+
+export async function createScenarioRun({
+  days = 90,
+  checkpoints,
+  seed = "calder-station-long-horizon",
+  startTime = DEFAULT_START_TIME,
+  tickMinutes = DAY_MINUTES,
+  seedData = townSeed,
+  prepareState = null,
+} = {}) {
+  validateScenarioOptions({ days, tickMinutes, prepareState });
 
   const checkpointDays = normalizeCheckpoints(checkpoints, days);
   let state = createInitialTown({ seed, startTime, seedData, environment: "staging" });
@@ -517,32 +524,104 @@ export async function runScenario({
       max: Math.max(...state.residents.map(({ hunger }) => hunger)),
     },
   };
-  const reports = {};
-  let checkpointIndex = 0;
-  const ticks = days * DAY_MINUTES / tickMinutes;
-
-  for (let tick = 0; tick < ticks; tick += 1) {
-    state = await advanceTown(state, { minutes: tickMinutes, decisionAdapter });
-    updateExtremes(extremes, state);
-    const completedDays = ((tick + 1) * tickMinutes) / DAY_MINUTES;
-    while (checkpointIndex < checkpointDays.length && checkpointDays[checkpointIndex] <= completedDays) {
-      const day = checkpointDays[checkpointIndex];
-      reports[String(day)] = summarizeScenario(initial, state, extremes);
-      checkpointIndex += 1;
-    }
-  }
 
   return {
-    kind: "calder-station-scenario",
+    kind: "calder-station-scenario-run",
     seed,
     seedRevision: state.seedRevision,
     startTime: asDate(startTime).toISOString(),
     days,
     tickMinutes,
-    checkpoints: reports,
-    final: summarizeScenario(initial, state, extremes),
+    checkpointDays,
+    reports: {},
+    completedDays: 0,
     state,
+    initial,
+    extremes,
   };
+}
+
+export async function advanceScenarioRun(run, {
+  throughDay = run?.days,
+  decisionAdapter = scriptedObligationPlan,
+} = {}) {
+  if (!run || typeof run !== "object") throw new TypeError("scenario run is required");
+  validateScenarioOptions({
+    days: run.days,
+    tickMinutes: run.tickMinutes,
+    decisionAdapter,
+    prepareState: null,
+  });
+  if (!Number.isInteger(run.completedDays) || run.completedDays < 0 || run.completedDays > run.days) {
+    throw new RangeError("scenario run has an invalid completed day");
+  }
+  if (!Number.isInteger(throughDay) || throughDay < run.completedDays || throughDay > run.days) {
+    throw new RangeError(`throughDay must be a whole day between ${run.completedDays} and ${run.days}`);
+  }
+
+  let state = run.state;
+  const extremes = run.extremes;
+  const reports = { ...(run.reports ?? {}) };
+  let checkpointIndex = (run.checkpointDays ?? []).findIndex((day) => !reports[String(day)]);
+  if (checkpointIndex < 0) checkpointIndex = (run.checkpointDays ?? []).length;
+  const ticks = (throughDay - run.completedDays) * DAY_MINUTES / run.tickMinutes;
+
+  for (let tick = 0; tick < ticks; tick += 1) {
+    state = await advanceTown(state, { minutes: run.tickMinutes, decisionAdapter });
+    updateExtremes(extremes, state);
+    const completedDays = run.completedDays + ((tick + 1) * run.tickMinutes) / DAY_MINUTES;
+    while (checkpointIndex < run.checkpointDays.length && run.checkpointDays[checkpointIndex] <= completedDays) {
+      const day = run.checkpointDays[checkpointIndex];
+      reports[String(day)] = summarizeScenario(run.initial, state, extremes);
+      checkpointIndex += 1;
+    }
+  }
+
+  return {
+    ...run,
+    state,
+    reports,
+    completedDays: throughDay,
+    extremes,
+  };
+}
+
+export function scenarioRunResult(run) {
+  if (!run || typeof run !== "object") throw new TypeError("scenario run is required");
+  return {
+    kind: "calder-station-scenario",
+    seed: run.seed,
+    seedRevision: run.seedRevision,
+    startTime: run.startTime,
+    days: run.days,
+    tickMinutes: run.tickMinutes,
+    checkpoints: run.reports,
+    final: summarizeScenario(run.initial, run.state, run.extremes),
+    state: run.state,
+  };
+}
+
+export async function runScenario({
+  days = 90,
+  checkpoints,
+  seed = "calder-station-long-horizon",
+  startTime = DEFAULT_START_TIME,
+  tickMinutes = DAY_MINUTES,
+  seedData = townSeed,
+  decisionAdapter = scriptedObligationPlan,
+  prepareState = null,
+} = {}) {
+  const run = await createScenarioRun({
+    days,
+    checkpoints,
+    seed,
+    startTime,
+    tickMinutes,
+    seedData,
+    prepareState,
+  });
+  const completed = await advanceScenarioRun(run, { throughDay: days, decisionAdapter });
+  return scenarioRunResult(completed);
 }
 
 export { DEFAULT_CHECKPOINTS };

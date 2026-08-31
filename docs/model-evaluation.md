@@ -73,6 +73,12 @@ The cron started this combined matrix-and-season revision at 2026-08-30 19:30:53
 
 The failure exposed an evaluation-boundary mistake: a repeated 24-call matrix and two full 90-day histories should not share one scheduled invocation. The matrix had already answered its question in v6. Rebuying it added cost and invocation pressure without new evidence.
 
+## `sal-resumable-season-v8-2026-08-31`
+
+This revision removed the already-answered matrix from scheduled staging work and separated the scripted baseline from the one-call assisted season. It was deployed successfully with a real staging Durable Object and the configured DeepSeek secret, but the 90-day baseline never reached its checkpoint. The report remained `baseline-running` through repeated quarter-hour observations (the first lease began at 01:00 UTC and a later stale-lease retry began at 01:30 UTC), so the model phase was never reached and there is no provider usage to report for v8. The failure is consistent with the scheduled Worker's default CPU boundary being too small for this replay, even though the same run is only a few seconds locally.
+
+The important result is operational: a phase marker alone was not enough. The runner needed a durable simulation snapshot, not merely a durable status string.
+
 ## Next revision
 
-`sal-resumable-season-v8-2026-08-31` runs only the unresolved experiment. One cron invocation stores the no-cost scripted baseline; a later invocation leases and runs the model-assisted season with exactly one eligible model decision. A stale baseline can retry safely. A stranded assisted lease remains terminal. This keeps both runs on the authoritative engine while making the expensive boundary resumable and auditable.
+`sal-resumable-season-v9-2026-08-31` keeps the same experiment but advances each baseline or assisted season through seven-day snapshots stored in the staging Durable Object's SQLite database. A scheduled invocation may complete all thirteen chunks; if CPU or runtime termination interrupts it, the next quarter-hour trigger resumes from the last stored chunk. The five-minute paid CPU limit is declared explicitly for both environments. The free phase may retry or resume; an assisted phase resumes only with a persisted snapshot, and otherwise remains terminal so an unknown model response is never silently repurchased.

@@ -91,13 +91,13 @@ The checked-in evaluation matrix runs eight physically impossible Sal conflict s
 DEEPSEEK_API_KEY=... npm run evaluate:model
 ```
 
-The staging Worker runs one clean 90-day scripted/model comparison once per configured revision from a server-side quarter-hour trigger. The free baseline and the one-call assisted season run in separate scheduled phases so a long replay cannot consume the same invocation budget as provider evaluation. The 24-case matrix remains a deliberate local tool and is not repurchased on every staging revision. The report is readable at `/api/evaluation`, but no public route can start, reset, or parameterize paid work.
+The staging Worker runs one clean 90-day scripted/model comparison once per configured revision from a server-side quarter-hour trigger. The free baseline and the one-call assisted season run in separate scheduled phases so a long replay cannot consume the same invocation budget as provider evaluation. Each season is advanced through the same engine in seven-day SQLite-backed checkpoints, so a runtime limit or restart resumes free work from its last completed chunk rather than leaving a misleading lease. The 24-case matrix remains a deliberate local tool and is not repurchased on every staging revision. The report is readable at `/api/evaluation`, but no public route can start, reset, or parameterize paid work.
 
-Staging durably checkpoints the no-cost baseline, then stores an `assisted-running` lease before the provider call. A stale free baseline may retry; an interrupted paid phase may not. Complete, failed, and paid in-flight revisions require a new evaluation revision before spending again. The town's normal alarm path similarly guards model decisions by their exact simulated planning instant so a Worker retry cannot casually buy the same unknown response twice.
+Staging durably checkpoints the no-cost baseline, then stores an `assisted-running` lease before the provider call. A stale free baseline may resume or retry; an interrupted paid phase resumes only when its persisted season snapshot is present, and otherwise remains terminal. Complete, failed, and paid in-flight revisions require a new evaluation revision before spending again. The staging Worker is configured for Cloudflare's paid five-minute CPU limit because the evaluation is deliberately heavier than a normal request. The town's normal alarm path similarly guards model decisions by their exact simulated planning instant so a Worker retry cannot casually buy the same unknown response twice.
 
 After a staging deployment, GitHub Actions waits up to 45 minutes for both scheduled phases. A blocked, failed, malformed, interrupted, or timed-out evaluation fails the staging run; a successful report and its cost summary remain in the deployment log for later review.
 
-The first genuine evaluation was technically clean but behaviorally uniform: 24/24 valid responses chose fulfillment, including cases where hunger prevented execution. The measured result and resulting design decision are recorded in [`docs/model-evaluation.md`](docs/model-evaluation.md).
+The first genuine evaluation was technically clean but behaviorally uniform: 24/24 valid responses chose fulfillment, including cases where hunger prevented execution. Later evaluations showed that DeepSeek understood physical deadline loss but still matched a competent deterministic preference for civic continuity. The measured results and resulting design decisions are recorded in [`docs/model-evaluation.md`](docs/model-evaluation.md).
 
 The current milestone is simple: a fresh Calder Station should survive 90 simulated days and accumulate understandable causal differences instead of producing ninety copies of the same day.
 
@@ -161,10 +161,10 @@ Persistent time follows a pause policy. One completed alarm advances one simulat
 | `src/scripted-decisions.js` | ordinary rule-based resident intent |
 | `src/deepseek-planner.js` | bounded DeepSeek decision adapter and failure handling |
 | `src/hybrid-planner.js` | shared scripted/model selection, pricing guard, and fallback |
-| `src/model-evaluation.js` | fixed paid evaluation matrix, same-engine execution, and cost report |
+| `src/model-evaluation.js` | fixed paid evaluation matrix, resumable same-engine season evaluation, and cost report |
 | `src/obligations.js` | commitment resolution, expiry, and bounded renewal |
 | `src/social.js` | deterministic co-location and relationship effects |
-| `src/scenario-runner.js` | long-horizon diagnostics and invariant checks |
+| `src/scenario-runner.js` | long-horizon diagnostics, invariant checks, and resumable run chunks |
 | `src/town-do.js` | persistent SQLite-backed Durable Object coordinator |
 | `src/demo-data.js` | authored Calder Station seed and compact regression seed |
 | `public/` | Folio UI, map, resident register, and portrait assets |

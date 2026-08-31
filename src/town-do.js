@@ -55,6 +55,12 @@ const SCHEMA = `
   );
 
   CREATE INDEX IF NOT EXISTS town_events_at_idx ON town_events (at, id);
+
+  CREATE TABLE IF NOT EXISTS town_evaluation_runs (
+    id TEXT PRIMARY KEY,
+    run_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
 `;
 
 const JSON_HEADERS = {
@@ -195,6 +201,48 @@ export class RookwoodTown {
     await this.ctx.storage.put(`${MODEL_EVALUATION_KEY_PREFIX}${revision}`, clone(report));
   }
 
+  evaluationRunId(revision = this.evaluationRevision()) {
+    if (!revision) return null;
+    return `${this.storageKey}:${revision}`;
+  }
+
+  readEvaluationRun(revision = this.evaluationRevision()) {
+    const id = this.evaluationRunId(revision);
+    if (!id) return null;
+    const rows = this.sql
+      .exec("SELECT run_json FROM town_evaluation_runs WHERE id = ?", id)
+      .toArray();
+    if (rows.length === 0) return null;
+    try {
+      return JSON.parse(rows[0].run_json);
+    } catch {
+      this.sql.exec("DELETE FROM town_evaluation_runs WHERE id = ?", id);
+      return null;
+    }
+  }
+
+  writeEvaluationRun(run, revision = this.evaluationRevision()) {
+    const id = this.evaluationRunId(revision);
+    if (!id || !run || typeof run !== "object") {
+      throw new TypeError("A staging evaluation run is required");
+    }
+    this.sql.exec(
+      `INSERT INTO town_evaluation_runs (id, run_json, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         run_json = excluded.run_json,
+         updated_at = excluded.updated_at`,
+      id,
+      JSON.stringify(clone(run)),
+      new Date().toISOString(),
+    );
+  }
+
+  deleteEvaluationRun(revision = this.evaluationRevision()) {
+    const id = this.evaluationRunId(revision);
+    if (id) this.sql.exec("DELETE FROM town_evaluation_runs WHERE id = ?", id);
+  }
+
   readEvents(limit = DEFAULT_EVENT_LIMIT) {
     return this.sql
       .exec(
@@ -293,6 +341,36 @@ export class RookwoodTown {
       }
     }
 
+    if (request.method === "POST" && url.pathname === "/evaluation-run") {
+      if (this.environment !== STAGING_ENVIRONMENT) {
+        return json({ error: "Model evaluation storage exists only in staging." }, 404);
+      }
+      try {
+        const body = await request.json();
+        if (body?.revision !== this.evaluationRevision()) {
+          throw new RangeError("Evaluation run revision does not match the staging configuration");
+        }
+        if (!["baseline", "assisted"].includes(body?.phase)) {
+          throw new RangeError("Evaluation run phase must be baseline or assisted");
+        }
+        this.writeEvaluationRun(body.run, body.revision);
+        return json({ ok: true, revision: body.revision, completedDays: body.run?.completedDays ?? null });
+      } catch (error) {
+        if (error instanceof RangeError || error instanceof TypeError || error instanceof SyntaxError) {
+          return json({ error: error.message }, 400);
+        }
+        throw error;
+      }
+    }
+
+    if (request.method === "DELETE" && url.pathname === "/evaluation-run") {
+      if (this.environment !== STAGING_ENVIRONMENT) {
+        return json({ error: "Model evaluation storage exists only in staging." }, 404);
+      }
+      this.deleteEvaluationRun();
+      return json({ ok: true });
+    }
+
     if (request.method !== "GET") {
       return json({ error: "Only GET is supported by the town object." }, 405);
     }
@@ -372,6 +450,13 @@ export class RookwoodTown {
           revision,
           status: this.env?.DEEPSEEK_API_KEY ? "pending" : "blocked-missing-key",
         });
+      }
+
+      if (url.pathname === "/evaluation-run") {
+        if (this.environment !== STAGING_ENVIRONMENT) {
+          return json({ error: "Model evaluation storage exists only in staging." }, 404);
+        }
+        return json(this.readEvaluationRun());
       }
 
       return json({ error: "Town object route not found." }, 404);

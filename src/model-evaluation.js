@@ -3,11 +3,15 @@ import { planResidentDecision } from "./hybrid-planner.js";
 import { materializeObligation } from "./obligations.js";
 import { isPeakPeriod } from "./scheduler.js";
 import { advanceTown, createInitialTown } from "./simulation.js";
-import { runScenario } from "./scenario-runner.js";
+import {
+  advanceScenarioRun,
+  createScenarioRun,
+  scenarioRunResult,
+} from "./scenario-runner.js";
 
 const MINUTE_MS = 60 * 1000;
 
-export const MODEL_EVALUATION_REVISION = "sal-resumable-season-v8-2026-08-31";
+export const MODEL_EVALUATION_REVISION = "sal-resumable-season-v9-2026-08-31";
 export const MODEL_EVALUATION_REPETITIONS = 3;
 export const MODEL_EVALUATION_CONCURRENCY = 3;
 
@@ -260,8 +264,46 @@ function seasonScenarioOptions(days) {
   };
 }
 
+function assistedDecisionAdapter({ env, fetchImpl, wallClock }) {
+  return (input) => planResidentDecision(input, {
+    env,
+    fetchImpl,
+    wallClock,
+    bypassPeakPricing: true,
+  });
+}
+
+export async function createModelSeasonRun({ days = 90 } = {}) {
+  return createScenarioRun(seasonScenarioOptions(days));
+}
+
+export async function advanceModelSeasonRun(run, {
+  mode = "baseline",
+  env,
+  fetchImpl = env?.DEEPSEEK_FETCH ?? globalThis.fetch,
+  wallClock = new Date(),
+  throughDay = run?.days,
+} = {}) {
+  if (mode !== "baseline" && mode !== "assisted") {
+    throw new RangeError("model season mode must be baseline or assisted");
+  }
+  if (mode === "assisted" && !env?.DEEPSEEK_API_KEY) {
+    throw new Error("DEEPSEEK_API_KEY is required for paid model evaluation");
+  }
+  const options = { throughDay };
+  if (mode === "assisted") {
+    options.decisionAdapter = assistedDecisionAdapter({ env, fetchImpl, wallClock });
+  }
+  return advanceScenarioRun(run, options);
+}
+
+export function modelSeasonResult(run) {
+  return compactSeasonResult(scenarioRunResult(run));
+}
+
 export async function runModelSeasonBaseline({ days = 90 } = {}) {
-  return compactSeasonResult(await runScenario(seasonScenarioOptions(days)));
+  const run = await createModelSeasonRun({ days });
+  return modelSeasonResult(await advanceModelSeasonRun(run, { throughDay: days }));
 }
 
 export async function runModelSeasonAssisted({
@@ -270,15 +312,13 @@ export async function runModelSeasonAssisted({
   wallClock = new Date(),
   days = 90,
 } = {}) {
-  if (!env?.DEEPSEEK_API_KEY) throw new Error("DEEPSEEK_API_KEY is required for paid model evaluation");
-  return compactSeasonResult(await runScenario({
-    ...seasonScenarioOptions(days),
-    decisionAdapter: (input) => planResidentDecision(input, {
-      env,
-      fetchImpl,
-      wallClock,
-      bypassPeakPricing: true,
-    }),
+  const run = await createModelSeasonRun({ days });
+  return modelSeasonResult(await advanceModelSeasonRun(run, {
+    mode: "assisted",
+    env,
+    fetchImpl,
+    wallClock,
+    throughDay: days,
   }));
 }
 

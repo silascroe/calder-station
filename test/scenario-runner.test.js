@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { runScenario } from "../src/scenario-runner.js";
+import {
+  advanceScenarioRun,
+  createScenarioRun,
+  runScenario,
+  scenarioRunResult,
+} from "../src/scenario-runner.js";
 import { scriptedObligationPlan } from "../src/obligations.js";
 
 test("the staging runner reports useful 1, 7, 30, and 90 day checkpoints", async () => {
@@ -60,6 +65,18 @@ test("the same seed and rules produce the same long-horizon report", async () =>
 
   assert.deepEqual(first.final, second.final);
   assert.deepEqual(first.checkpoints, second.checkpoints);
+});
+
+test("chunked scenario advancement is identical to one uninterrupted run", async () => {
+  const options = { days: 30, checkpoints: [1, 7, 30], seed: "chunked-replay-check" };
+  const uninterrupted = await runScenario(options);
+  const prepared = await createScenarioRun(options);
+  const firstChunk = await advanceScenarioRun(prepared, { throughDay: 7 });
+  const secondChunk = await advanceScenarioRun(firstChunk, { throughDay: 30 });
+  const chunked = scenarioRunResult(secondChunk);
+
+  assert.deepEqual(chunked.final, uninterrupted.final);
+  assert.deepEqual(chunked.checkpoints, uninterrupted.checkpoints);
 });
 
 test("the runner can execute a short custom horizon without requiring every default checkpoint", async () => {

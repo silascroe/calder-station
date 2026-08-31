@@ -6,10 +6,11 @@ import {
 } from "./simulation.js";
 import { RookwoodTown, townStorageKey } from "./town-do.js";
 import {
+  advanceModelSeasonRun,
   combineModelSeasonResults,
+  createModelSeasonRun,
   MODEL_EVALUATION_REVISION,
-  runModelSeasonAssisted,
-  runModelSeasonBaseline,
+  modelSeasonResult,
 } from "./model-evaluation.js";
 import { DEFAULT_DEEPSEEK_MODEL } from "./deepseek-planner.js";
 
@@ -20,6 +21,8 @@ const JSON_HEADERS = {
   "cache-control": "no-store",
 };
 const BASELINE_LEASE_MS = 20 * 60 * 1000;
+const EVALUATION_CHUNK_DAYS = 7;
+const MAX_EVALUATION_CHUNKS_PER_INVOCATION = 13;
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -90,11 +93,83 @@ async function storeEvaluation(stub, report) {
   if (!response.ok) throw new Error(`Could not persist model evaluation: HTTP ${response.status}`);
 }
 
+async function readEvaluationRun(stub) {
+  const response = await stub.fetch(new Request("https://town.internal/evaluation-run"));
+  if (!response.ok) throw new Error(`Could not read model evaluation run: HTTP ${response.status}`);
+  const run = await response.json();
+  return run?.kind === "calder-station-scenario-run" && run.state && run.initial
+    ? run
+    : null;
+}
+
+async function storeEvaluationRun(stub, revision, phase, run) {
+  const response = await stub.fetch(new Request("https://town.internal/evaluation-run", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ revision, phase, run: { ...run, evaluationPhase: phase } }),
+  }));
+  if (!response.ok) throw new Error(`Could not persist model evaluation run: HTTP ${response.status}`);
+}
+
+async function deleteEvaluationRun(stub) {
+  const response = await stub.fetch(new Request("https://town.internal/evaluation-run", {
+    method: "DELETE",
+  }));
+  if (!response.ok) throw new Error(`Could not delete model evaluation run: HTTP ${response.status}`);
+}
+
+function progressReport({ revision, status, phase, startedAt, completedDays, days, paidCallsAtRisk, checkedAt }) {
+  return {
+    kind: "calder-station-model-evaluation",
+    revision,
+    status,
+    phase,
+    startedAt,
+    checkedAt,
+    completedDays,
+    totalDays: days,
+    paidCallsAtRisk,
+  };
+}
+
+async function advanceEvaluationRun({
+  stub,
+  revision,
+  phase,
+  run,
+  env,
+  wallClock,
+  days,
+  createRun = createModelSeasonRun,
+  advanceRun = advanceModelSeasonRun,
+  resultForRun = modelSeasonResult,
+}) {
+  let current = run ?? await createRun({ days });
+  let chunks = 0;
+  while (current.completedDays < days && chunks < MAX_EVALUATION_CHUNKS_PER_INVOCATION) {
+    const throughDay = Math.min(days, current.completedDays + EVALUATION_CHUNK_DAYS);
+    current = await advanceRun(current, {
+      mode: phase === "assisted" ? "assisted" : "baseline",
+      env,
+      fetchImpl: env?.DEEPSEEK_FETCH ?? globalThis.fetch,
+      wallClock,
+      throughDay,
+    });
+    await storeEvaluationRun(stub, revision, phase, current);
+    chunks += 1;
+  }
+  return {
+    run: current,
+    result: current.completedDays >= days ? resultForRun(current) : null,
+  };
+}
+
 export async function runScheduledModelEvaluation(env, {
   wallClock = new Date(),
   days = 90,
-  baselineRunner = runModelSeasonBaseline,
-  assistedRunner = runModelSeasonAssisted,
+  createRun = createModelSeasonRun,
+  advanceRun = advanceModelSeasonRun,
+  resultForRun = modelSeasonResult,
 } = {}) {
   if (env?.TOWN_ENV !== "staging") return { status: "skipped-non-staging" };
   if (!persistentBindingReady(env)) throw new Error("Staging model evaluation requires the TOWN binding");
@@ -103,8 +178,10 @@ export async function runScheduledModelEvaluation(env, {
   const currentResponse = await stub.fetch(new Request("https://town.internal/evaluation"));
   if (!currentResponse.ok) throw new Error(`Could not read model evaluation: HTTP ${currentResponse.status}`);
   const current = await currentResponse.json();
-  if (current.revision === revision && ["complete", "failed", "assisted-running"].includes(current.status)) return current;
-  if (current.revision === revision && current.status === "baseline-running") {
+  const storedRun = await readEvaluationRun(stub);
+  if (current.revision === revision && ["complete", "failed"].includes(current.status)) return current;
+  if (current.revision === revision && current.status === "assisted-running" && !storedRun) return current;
+  if (current.revision === revision && current.status === "baseline-running" && !storedRun) {
     const leaseAge = new Date(wallClock).getTime() - new Date(current.startedAt).getTime();
     if (Number.isFinite(leaseAge) && leaseAge < BASELINE_LEASE_MS) return current;
   }
@@ -121,68 +198,139 @@ export async function runScheduledModelEvaluation(env, {
   }
 
   const checkedAt = new Date(wallClock).toISOString();
-  if (current.revision !== revision || current.status !== "baseline-complete") {
-    await storeEvaluation(stub, {
-      kind: "calder-station-model-evaluation",
+  const baselineInProgress = current.revision === revision
+    && current.status === "baseline-running"
+    && storedRun?.evaluationPhase === "baseline";
+  const baselineLeaseExpired = current.revision === revision
+    && current.status === "baseline-running"
+    && !storedRun
+    && (!Number.isFinite(new Date(wallClock).getTime() - new Date(current.startedAt).getTime())
+      || new Date(wallClock).getTime() - new Date(current.startedAt).getTime() >= BASELINE_LEASE_MS);
+  if (baselineInProgress || baselineLeaseExpired || current.revision !== revision || current.status === "pending" || current.status === "blocked-missing-key") {
+    const startedAt = current.revision === revision ? current.startedAt ?? checkedAt : checkedAt;
+    await storeEvaluation(stub, progressReport({
       revision,
       status: "baseline-running",
-      startedAt: checkedAt,
       phase: "scripted-baseline",
+      startedAt,
+      checkedAt,
+      completedDays: baselineInProgress ? storedRun.completedDays : 0,
+      days,
       paidCallsAtRisk: 0,
-    });
-    let baseline;
+    }));
     try {
-      baseline = await baselineRunner({ days });
-    } catch (error) {
-      const failed = {
-        kind: "calder-station-model-evaluation",
+      const progressed = await advanceEvaluationRun({
+        stub,
         revision,
-        status: "failed",
-        phase: "scripted-baseline",
-        checkedAt,
+        phase: "baseline",
+        env,
+        wallClock,
+        days,
+        run: baselineInProgress ? storedRun : null,
+        createRun,
+        advanceRun,
+        resultForRun,
+      });
+      if (!progressed.result) {
+        const progress = progressReport({
+          revision,
+          status: "baseline-running",
+          phase: "scripted-baseline",
+          startedAt,
+          checkedAt,
+          completedDays: progressed.run.completedDays,
+          days,
+          paidCallsAtRisk: 0,
+        });
+        await storeEvaluation(stub, progress);
+        return progress;
+      }
+      await deleteEvaluationRun(stub);
+      const checkpoint = {
+        ...progressReport({
+          revision,
+          status: "baseline-complete",
+          phase: "awaiting-model-season",
+          startedAt,
+          checkedAt,
+          completedDays: days,
+          days,
+          paidCallsAtRisk: 0,
+        }),
+        baseline: progressed.result,
+      };
+      await storeEvaluation(stub, checkpoint);
+      return checkpoint;
+    } catch (error) {
+      await deleteEvaluationRun(stub);
+      const failed = {
+        ...progressReport({
+          revision,
+          status: "failed",
+          phase: "scripted-baseline",
+          startedAt,
+          checkedAt,
+          completedDays: 0,
+          days,
+          paidCallsAtRisk: 0,
+        }),
         error: error?.name ?? "EvaluationError",
       };
       await storeEvaluation(stub, failed);
       return failed;
     }
-    const checkpoint = {
-      kind: "calder-station-model-evaluation",
-      revision,
-      status: "baseline-complete",
-      phase: "awaiting-model-season",
-      checkedAt,
-      baseline,
-    };
-    await storeEvaluation(stub, checkpoint);
-    return checkpoint;
   }
 
-  await storeEvaluation(stub, {
-    ...current,
-    status: "assisted-running",
-    phase: "model-assisted-season",
-    assistedStartedAt: checkedAt,
-    paidCallsAtRisk: 1,
-  });
+  const startedAt = current.startedAt ?? current.checkedAt ?? checkedAt;
+  if (current.status === "baseline-complete") {
+    await storeEvaluation(stub, {
+      ...current,
+      status: "assisted-running",
+      phase: "model-assisted-season",
+      assistedStartedAt: checkedAt,
+      paidCallsAtRisk: 1,
+      completedDays: 0,
+    });
+  }
 
-  let report;
   try {
-    const assisted = await assistedRunner({
+    const progressed = await advanceEvaluationRun({
+      stub,
+      revision,
+      phase: "assisted",
       env,
-      fetchImpl: env?.DEEPSEEK_FETCH ?? globalThis.fetch,
       wallClock,
       days,
+      run: storedRun?.evaluationPhase === "assisted" ? storedRun : null,
+      createRun,
+      advanceRun,
+      resultForRun,
     });
+    if (!progressed.result) {
+      const progress = {
+        ...current,
+        status: "assisted-running",
+        phase: "model-assisted-season",
+        assistedStartedAt: current.assistedStartedAt ?? checkedAt,
+        checkedAt,
+        completedDays: progressed.run.completedDays,
+        totalDays: days,
+        paidCallsAtRisk: 1,
+      };
+      await storeEvaluation(stub, progress);
+      return progress;
+    }
+    const assisted = progressed.result;
     const longHorizon = combineModelSeasonResults({ baseline: current.baseline, assisted, wallClock, days });
     const model = assisted.model ?? {};
     const calls = Number(model.attempts ?? 0);
     const fallbackCount = Number(model.fallbacks ?? 0);
-    report = {
+    const report = {
       kind: "calder-station-model-evaluation",
       revision,
       status: "complete",
-      requestedAt: current.startedAt ?? current.checkedAt ?? checkedAt,
-      completedAt: new Date().toISOString(),
+      requestedAt: startedAt,
+      completedAt: checkedAt,
       model: env.DEEPSEEK_MODEL ?? DEFAULT_DEEPSEEK_MODEL,
       calls,
       matrixCalls: 0,
@@ -195,8 +343,11 @@ export async function runScheduledModelEvaluation(env, {
       estimatedCostUsd: longHorizon.estimatedCostUsd,
       longHorizon,
     };
+    await deleteEvaluationRun(stub);
+    await storeEvaluation(stub, report);
+    return report;
   } catch (error) {
-    report = {
+    const failed = {
       kind: "calder-station-model-evaluation",
       revision,
       status: "failed",
@@ -204,9 +355,10 @@ export async function runScheduledModelEvaluation(env, {
       checkedAt,
       error: error?.name ?? "EvaluationError",
     };
+    await deleteEvaluationRun(stub);
+    await storeEvaluation(stub, failed);
+    return failed;
   }
-  await storeEvaluation(stub, report);
-  return report;
 }
 
 export default {

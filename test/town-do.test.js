@@ -14,11 +14,16 @@ class Cursor {
 class FakeSql {
   stateRow = null;
   eventRows = new Map();
+  runRows = new Map();
 
   exec(query, ...bindings) {
     const normalized = query.replace(/\s+/g, " ").trim();
     if (normalized.startsWith("CREATE TABLE") || normalized.startsWith("CREATE INDEX")) return new Cursor();
     if (normalized.startsWith("SELECT state_json FROM town_state")) return new Cursor(this.stateRow ? [this.stateRow] : []);
+    if (normalized.startsWith("SELECT run_json FROM town_evaluation_runs")) {
+      const row = this.runRows.get(bindings[0]);
+      return new Cursor(row ? [{ run_json: row.run_json }] : []);
+    }
     if (normalized.startsWith("SELECT id, event_json FROM town_events")) {
       return new Cursor([...this.eventRows.values()].map(({ id, event_json }) => ({ id, event_json })));
     }
@@ -35,6 +40,15 @@ class FakeSql {
     if (normalized.startsWith("INSERT INTO town_state")) {
       const [id, state_json, updated_at] = bindings;
       this.stateRow = { id, state_json, updated_at };
+      return new Cursor();
+    }
+    if (normalized.startsWith("INSERT INTO town_evaluation_runs")) {
+      const [id, run_json, updated_at] = bindings;
+      this.runRows.set(id, { id, run_json, updated_at });
+      return new Cursor();
+    }
+    if (normalized.startsWith("DELETE FROM town_evaluation_runs")) {
+      this.runRows.delete(bindings[0]);
       return new Cursor();
     }
     if (normalized.startsWith("INSERT OR IGNORE INTO town_events")) {
@@ -417,6 +431,34 @@ test("staging persists a bounded model evaluation report outside the town projec
   assert.deepEqual(await read.json(), report);
   assert.deepEqual(storage.values.get("model-evaluation:evaluation-test"), report);
   assert.equal(storage.sql.stateRow, null);
+});
+
+test("staging persists and clears resumable evaluation runs in SQLite", async () => {
+  const { town, storage } = makeTown({
+    TOWN_ENV: "staging",
+    MODEL_EVALUATION_REVISION: "evaluation-test",
+  });
+  const run = {
+    kind: "calder-station-scenario-run",
+    completedDays: 14,
+    days: 90,
+    state: { now: "2026-09-14T00:00:00.000Z" },
+    initial: { now: "2026-08-31T00:00:00.000Z" },
+  };
+  const written = await town.fetch(new Request("https://town.internal/evaluation-run", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ revision: "evaluation-test", phase: "baseline", run }),
+  }));
+  assert.equal(written.status, 200);
+
+  const read = await town.fetch(new Request("https://town.internal/evaluation-run"));
+  assert.deepEqual(await read.json(), run);
+  assert.equal(storage.sql.runRows.size, 1);
+
+  const deleted = await town.fetch(new Request("https://town.internal/evaluation-run", { method: "DELETE" }));
+  assert.equal(deleted.status, 200);
+  assert.equal(storage.sql.runRows.size, 0);
 });
 
 test("alarms advance from the projection without loading the entire event log", async () => {

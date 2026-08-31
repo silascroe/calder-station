@@ -3,6 +3,9 @@
   "name": "town-dashboard",
   "main": "src/worker.js",
   "compatibility_date": "2026-08-30",
+  "limits": {
+    "cpu_ms": 300000
+  },
   "workers_dev": true,
   "vars": {
     "TOWN_ENV": "production"
@@ -32,7 +35,10 @@
       "name": "town-dashboard-staging",
       "vars": {
         "TOWN_ENV": "staging",
-        "MODEL_EVALUATION_REVISION": "sal-resumable-season-v8-2026-08-31"
+        "MODEL_EVALUATION_REVISION": "sal-resumable-season-v9-2026-08-31"
+      },
+      "limits": {
+        "cpu_ms": 300000
       },
       "triggers": {
         "crons": ["*/15 * * * *"]

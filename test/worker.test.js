@@ -127,7 +127,10 @@ test("the scheduled evaluator never automatically repeats a terminal or paid in-
       DEEPSEEK_API_KEY: "test-key",
       TOWN: {
         getByName: () => ({
-          fetch: async () => {
+          fetch: async (request) => {
+            if (new URL(request.url).pathname === "/evaluation-run") {
+              return new Response("null");
+            }
             reads += 1;
             return new Response(JSON.stringify(report));
           },
@@ -161,11 +164,55 @@ function seasonResult({ selectedObligationId, calls = 0 } = {}) {
   };
 }
 
+function evaluationRun({ days = 7, completedDays = 0, resultKind = null } = {}) {
+  return {
+    kind: "calder-station-scenario-run",
+    days,
+    completedDays,
+    state: {},
+    initial: {},
+    extremes: {},
+    checkpointDays: [],
+    reports: {},
+    ...(resultKind ? { resultKind } : {}),
+  };
+}
+
+function evaluationDependencies({ maxProgress = Infinity } = {}) {
+  return {
+    createRun: async ({ days }) => evaluationRun({ days }),
+    advanceRun: async (run, { throughDay, mode }) => ({
+      ...run,
+      completedDays: Math.min(throughDay, run.completedDays + maxProgress),
+      resultKind: mode,
+    }),
+    resultForRun: (run) => seasonResult({
+      selectedObligationId: run.resultKind === "assisted"
+        ? "evaluation-season-route-report"
+        : "obligation-sal-vey-notice",
+      calls: run.resultKind === "assisted" ? 1 : 0,
+    }),
+  };
+}
+
 test("the scheduled evaluator checkpoints the free baseline before leasing one paid season call", async () => {
   const writes = [];
   let current = { revision: "older-evaluation", status: "complete" };
+  let currentRun = null;
   const stub = {
     fetch: async (request) => {
+      const pathname = new URL(request.url).pathname;
+      if (pathname === "/evaluation-run") {
+        if (request.method === "POST") {
+          currentRun = (await request.json()).run;
+          return new Response(JSON.stringify({ ok: true }));
+        }
+        if (request.method === "DELETE") {
+          currentRun = null;
+          return new Response(JSON.stringify({ ok: true }));
+        }
+        return new Response(JSON.stringify(currentRun));
+      }
       if (request.method === "POST") {
         current = await request.json();
         writes.push(current);
@@ -180,20 +227,19 @@ test("the scheduled evaluator checkpoints the free baseline before leasing one p
     DEEPSEEK_API_KEY: "test-key",
     TOWN: { getByName: () => stub },
   };
-  const baseline = seasonResult({ selectedObligationId: "obligation-sal-vey-notice" });
-  const assisted = seasonResult({ selectedObligationId: "evaluation-season-route-report", calls: 1 });
-
   const checkpoint = await runScheduledModelEvaluation(env, {
     wallClock: new Date("2026-08-31T00:00:00.000Z"),
-    baselineRunner: async () => baseline,
+    days: 7,
+    ...evaluationDependencies(),
   });
   assert.equal(checkpoint.status, "baseline-complete");
-  assert.deepEqual(checkpoint.baseline, baseline);
+  assert.equal(checkpoint.baseline.selectedObligationId, "obligation-sal-vey-notice");
   assert.deepEqual(writes.map(({ status }) => status), ["baseline-running", "baseline-complete"]);
 
   const report = await runScheduledModelEvaluation(env, {
     wallClock: new Date("2026-08-31T00:15:00.000Z"),
-    assistedRunner: async () => assisted,
+    days: 7,
+    ...evaluationDependencies(),
   });
 
   assert.deepEqual(writes.map(({ status }) => status), [
@@ -209,15 +255,117 @@ test("the scheduled evaluator checkpoints the free baseline before leasing one p
   assert.equal(report.longHorizon.assisted.selectedObligationId, "evaluation-season-route-report");
 });
 
+test("an in-progress season resumes from its persisted chunk without another paid start", async () => {
+  let current = { revision: "older-evaluation", status: "complete" };
+  let currentRun = null;
+  let createCount = 0;
+  const writes = [];
+  const stub = {
+    fetch: async (request) => {
+      const pathname = new URL(request.url).pathname;
+      if (pathname === "/evaluation-run") {
+        if (request.method === "POST") {
+          currentRun = (await request.json()).run;
+          return new Response(JSON.stringify({ ok: true }));
+        }
+        if (request.method === "DELETE") {
+          currentRun = null;
+          return new Response(JSON.stringify({ ok: true }));
+        }
+        return new Response(JSON.stringify(currentRun));
+      }
+      if (request.method === "POST") {
+        current = await request.json();
+        writes.push(current);
+        return new Response(JSON.stringify({ ok: true }));
+      }
+      return new Response(JSON.stringify(current));
+    },
+  };
+  const env = {
+    TOWN_ENV: "staging",
+    MODEL_EVALUATION_REVISION: "evaluation-test",
+    DEEPSEEK_API_KEY: "test-key",
+    TOWN: { getByName: () => stub },
+  };
+  const dependencies = evaluationDependencies({ maxProgress: 1 });
+  const createRun = async ({ days }) => {
+    createCount += 1;
+    return evaluationRun({ days });
+  };
+
+  const first = await runScheduledModelEvaluation(env, {
+    days: 14,
+    ...dependencies,
+    createRun,
+  });
+  assert.equal(first.status, "baseline-running");
+  assert.equal(first.completedDays, 13);
+  assert.equal(currentRun.completedDays, 13);
+
+  const second = await runScheduledModelEvaluation(env, {
+    wallClock: new Date("2026-08-31T00:15:00.000Z"),
+    days: 14,
+    ...dependencies,
+    createRun,
+  });
+  assert.equal(second.status, "baseline-complete");
+  assert.equal(createCount, 1);
+  assert.equal(currentRun, null);
+
+  const third = await runScheduledModelEvaluation(env, {
+    wallClock: new Date("2026-08-31T00:30:00.000Z"),
+    days: 14,
+    ...dependencies,
+    createRun,
+  });
+  assert.equal(third.status, "assisted-running");
+  assert.equal(third.completedDays, 13);
+  assert.equal(createCount, 2);
+
+  const fourth = await runScheduledModelEvaluation(env, {
+    wallClock: new Date("2026-08-31T00:45:00.000Z"),
+    days: 14,
+    ...dependencies,
+    createRun,
+  });
+  assert.equal(fourth.status, "complete");
+  assert.equal(fourth.calls, 1);
+  assert.equal(createCount, 2);
+  assert.equal(currentRun, null);
+  assert.deepEqual(writes.map(({ status }) => status), [
+    "baseline-running",
+    "baseline-running",
+    "baseline-running",
+    "baseline-complete",
+    "assisted-running",
+    "assisted-running",
+    "complete",
+  ]);
+});
+
 test("an expired free baseline lease may retry without risking a duplicate provider call", async () => {
   let current = {
     revision: "evaluation-test",
     status: "baseline-running",
     startedAt: "2026-08-31T00:00:00.000Z",
   };
+  let currentRun = null;
   let baselineRuns = 0;
   const stub = {
     fetch: async (request) => {
+      const pathname = new URL(request.url).pathname;
+      if (pathname === "/evaluation-run") {
+        if (request.method === "POST") {
+          currentRun = await request.json();
+          return new Response(JSON.stringify({ ok: true }));
+        }
+        if (request.method === "DELETE") {
+          currentRun = null;
+          return new Response(JSON.stringify({ ok: true }));
+        }
+        return new Response(JSON.stringify(currentRun));
+      }
       if (request.method === "POST") {
         current = await request.json();
         return new Response(JSON.stringify({ ok: true }));
@@ -234,16 +382,19 @@ test("an expired free baseline lease may retry without risking a duplicate provi
 
   const fresh = await runScheduledModelEvaluation(env, {
     wallClock: new Date("2026-08-31T00:10:00.000Z"),
-    baselineRunner: async () => { baselineRuns += 1; },
+    days: 7,
+    ...evaluationDependencies(),
   });
   assert.equal(fresh.status, "baseline-running");
   assert.equal(baselineRuns, 0);
 
   const recovered = await runScheduledModelEvaluation(env, {
     wallClock: new Date("2026-08-31T00:25:00.000Z"),
-    baselineRunner: async () => {
+    days: 7,
+    ...evaluationDependencies(),
+    createRun: async ({ days }) => {
       baselineRuns += 1;
-      return seasonResult({ selectedObligationId: "obligation-sal-vey-notice" });
+      return evaluationRun({ days });
     },
   });
   assert.equal(recovered.status, "baseline-complete");
