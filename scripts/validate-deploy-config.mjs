@@ -44,13 +44,6 @@ export function validateDeployConfig(config) {
   if (config?.exports?.RookwoodTown?.storage !== "sqlite") {
     errors.push("RookwoodTown must remain declared as SQLite-backed storage");
   }
-  if (config?.limits?.cpu_ms !== 300000) {
-    errors.push("production must declare the paid 5-minute CPU limit for the hourly coordinator");
-  }
-  if (staging?.limits?.cpu_ms !== 300000) {
-    errors.push("staging must explicitly declare the paid 5-minute CPU limit for resumable evaluations");
-  }
-
   if (errors.length > 0) {
     throw new Error(`Invalid deployment configuration:\n- ${errors.join("\n- ")}`);
   }

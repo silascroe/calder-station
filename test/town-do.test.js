@@ -461,6 +461,43 @@ test("staging persists and clears resumable evaluation runs in SQLite", async ()
   assert.equal(storage.sql.runRows.size, 0);
 });
 
+test("a staging evaluation step advances the real scenario engine and returns a checkpoint", async () => {
+  const { town, storage } = makeTown({
+    TOWN_ENV: "staging",
+    MODEL_EVALUATION_REVISION: "evaluation-test",
+  });
+  const response = await town.fetch(new Request("https://town.internal/evaluation-step", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      revision: "evaluation-test",
+      phase: "baseline",
+      days: 1,
+      chunkDays: 1,
+      wallClock: "2026-08-31T00:00:00.000Z",
+    }),
+  }));
+  const checkpoint = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(checkpoint.revision, "evaluation-test");
+  assert.equal(checkpoint.phase, "baseline");
+  assert.equal(checkpoint.completedDays, 1);
+  assert.equal(checkpoint.totalDays, 1);
+  assert.equal(checkpoint.complete, true);
+  assert.equal(checkpoint.result.healthy, true);
+  assert.equal(storage.sql.runRows.size, 1);
+  const stored = [...storage.sql.runRows.values()][0];
+  assert.equal(JSON.parse(stored.run_json).evaluationPhase, "baseline");
+
+  const meta = await town.fetch(new Request("https://town.internal/evaluation-run-meta"));
+  assert.equal((await meta.json()).completedDays, 1);
+
+  const deleted = await town.fetch(new Request("https://town.internal/evaluation-run", { method: "DELETE" }));
+  assert.equal(deleted.status, 200);
+  assert.equal(storage.sql.runRows.size, 0);
+});
+
 test("alarms advance from the projection without loading the entire event log", async () => {
   const { town, storage } = makeTown();
   await town.fetch(new Request("https://town.internal/state"));

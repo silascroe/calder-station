@@ -128,7 +128,7 @@ test("the scheduled evaluator never automatically repeats a terminal or paid in-
       TOWN: {
         getByName: () => ({
           fetch: async (request) => {
-            if (new URL(request.url).pathname === "/evaluation-run") {
+            if (new URL(request.url).pathname === "/evaluation-run-meta") {
               return new Response("null");
             }
             reads += 1;
@@ -164,34 +164,29 @@ function seasonResult({ selectedObligationId, calls = 0 } = {}) {
   };
 }
 
-function evaluationRun({ days = 7, completedDays = 0, resultKind = null } = {}) {
+function evaluationDependencies({ maxProgress = Infinity, onStep = () => {} } = {}) {
+  let activePhase = null;
+  let completedDays = 0;
   return {
-    kind: "calder-station-scenario-run",
-    days,
-    completedDays,
-    state: {},
-    initial: {},
-    extremes: {},
-    checkpointDays: [],
-    reports: {},
-    ...(resultKind ? { resultKind } : {}),
-  };
-}
-
-function evaluationDependencies({ maxProgress = Infinity } = {}) {
-  return {
-    createRun: async ({ days }) => evaluationRun({ days }),
-    advanceRun: async (run, { throughDay, mode }) => ({
-      ...run,
-      completedDays: Math.min(throughDay, run.completedDays + maxProgress),
-      resultKind: mode,
-    }),
-    resultForRun: (run) => seasonResult({
-      selectedObligationId: run.resultKind === "assisted"
+    stepRunner: async (_stub, { phase, days }) => {
+      if (phase !== activePhase) {
+        activePhase = phase;
+        completedDays = 0;
+      }
+      completedDays = Math.min(days, completedDays + maxProgress);
+      const complete = completedDays >= days;
+      onStep({ phase, completedDays, complete, days });
+      return {
+        completedDays,
+        complete,
+        result: complete ? seasonResult({
+          selectedObligationId: phase === "assisted"
         ? "evaluation-season-route-report"
         : "obligation-sal-vey-notice",
-      calls: run.resultKind === "assisted" ? 1 : 0,
-    }),
+          calls: phase === "assisted" ? 1 : 0,
+        }) : null,
+      };
+    },
   };
 }
 
@@ -202,7 +197,11 @@ test("the scheduled evaluator checkpoints the free baseline before leasing one p
   const stub = {
     fetch: async (request) => {
       const pathname = new URL(request.url).pathname;
-      if (pathname === "/evaluation-run") {
+      if (pathname === "/evaluation-run" && request.method === "DELETE") {
+        currentRun = null;
+        return new Response(JSON.stringify({ ok: true }));
+      }
+      if (pathname === "/evaluation-run-meta") {
         if (request.method === "POST") {
           currentRun = (await request.json()).run;
           return new Response(JSON.stringify({ ok: true }));
@@ -230,10 +229,20 @@ test("the scheduled evaluator checkpoints the free baseline before leasing one p
   const checkpoint = await runScheduledModelEvaluation(env, {
     wallClock: new Date("2026-08-31T00:00:00.000Z"),
     days: 7,
-    ...evaluationDependencies(),
+    ...evaluationDependencies({
+      onStep: ({ phase, completedDays, complete, days }) => {
+        currentRun = complete ? null : {
+          kind: "calder-station-scenario-run",
+          evaluationPhase: phase,
+          completedDays,
+          days,
+        };
+      },
+    }),
   });
   assert.equal(checkpoint.status, "baseline-complete");
   assert.equal(checkpoint.baseline.selectedObligationId, "obligation-sal-vey-notice");
+  assert.equal(currentRun, null);
   assert.deepEqual(writes.map(({ status }) => status), ["baseline-running", "baseline-complete"]);
 
   const report = await runScheduledModelEvaluation(env, {
@@ -253,17 +262,17 @@ test("the scheduled evaluator checkpoints the free baseline before leasing one p
   assert.equal(report.matrixCalls, 0);
   assert.equal(report.longHorizon.baseline.selectedObligationId, "obligation-sal-vey-notice");
   assert.equal(report.longHorizon.assisted.selectedObligationId, "evaluation-season-route-report");
+  assert.equal(currentRun, null);
 });
 
 test("an in-progress season resumes from its persisted chunk without another paid start", async () => {
   let current = { revision: "older-evaluation", status: "complete" };
   let currentRun = null;
-  let createCount = 0;
   const writes = [];
   const stub = {
     fetch: async (request) => {
       const pathname = new URL(request.url).pathname;
-      if (pathname === "/evaluation-run") {
+      if (pathname === "/evaluation-run-meta") {
         if (request.method === "POST") {
           currentRun = (await request.json()).run;
           return new Response(JSON.stringify({ ok: true }));
@@ -288,16 +297,21 @@ test("an in-progress season resumes from its persisted chunk without another pai
     DEEPSEEK_API_KEY: "test-key",
     TOWN: { getByName: () => stub },
   };
-  const dependencies = evaluationDependencies({ maxProgress: 1 });
-  const createRun = async ({ days }) => {
-    createCount += 1;
-    return evaluationRun({ days });
-  };
+  const dependencies = evaluationDependencies({
+    maxProgress: 1,
+    onStep: ({ phase, completedDays, complete, days }) => {
+      currentRun = complete ? null : {
+        kind: "calder-station-scenario-run",
+        evaluationPhase: phase,
+        completedDays,
+        days,
+      };
+    },
+  });
 
   const first = await runScheduledModelEvaluation(env, {
     days: 14,
     ...dependencies,
-    createRun,
   });
   assert.equal(first.status, "baseline-running");
   assert.equal(first.completedDays, 13);
@@ -307,31 +321,25 @@ test("an in-progress season resumes from its persisted chunk without another pai
     wallClock: new Date("2026-08-31T00:15:00.000Z"),
     days: 14,
     ...dependencies,
-    createRun,
   });
   assert.equal(second.status, "baseline-complete");
-  assert.equal(createCount, 1);
   assert.equal(currentRun, null);
 
   const third = await runScheduledModelEvaluation(env, {
     wallClock: new Date("2026-08-31T00:30:00.000Z"),
     days: 14,
     ...dependencies,
-    createRun,
   });
   assert.equal(third.status, "assisted-running");
   assert.equal(third.completedDays, 13);
-  assert.equal(createCount, 2);
 
   const fourth = await runScheduledModelEvaluation(env, {
     wallClock: new Date("2026-08-31T00:45:00.000Z"),
     days: 14,
     ...dependencies,
-    createRun,
   });
   assert.equal(fourth.status, "complete");
   assert.equal(fourth.calls, 1);
-  assert.equal(createCount, 2);
   assert.equal(currentRun, null);
   assert.deepEqual(writes.map(({ status }) => status), [
     "baseline-running",
@@ -351,11 +359,11 @@ test("an expired free baseline lease may retry without risking a duplicate provi
     startedAt: "2026-08-31T00:00:00.000Z",
   };
   let currentRun = null;
-  let baselineRuns = 0;
+  let baselineSteps = 0;
   const stub = {
     fetch: async (request) => {
       const pathname = new URL(request.url).pathname;
-      if (pathname === "/evaluation-run") {
+      if (pathname === "/evaluation-run-meta") {
         if (request.method === "POST") {
           currentRun = await request.json();
           return new Response(JSON.stringify({ ok: true }));
@@ -386,17 +394,21 @@ test("an expired free baseline lease may retry without risking a duplicate provi
     ...evaluationDependencies(),
   });
   assert.equal(fresh.status, "baseline-running");
-  assert.equal(baselineRuns, 0);
+  assert.equal(baselineSteps, 0);
 
   const recovered = await runScheduledModelEvaluation(env, {
     wallClock: new Date("2026-08-31T00:25:00.000Z"),
     days: 7,
-    ...evaluationDependencies(),
-    createRun: async ({ days }) => {
-      baselineRuns += 1;
-      return evaluationRun({ days });
+    stepRunner: async (_stub, { phase, days }) => {
+      baselineSteps += 1;
+      assert.equal(phase, "baseline");
+      return {
+        completedDays: days,
+        complete: true,
+        result: seasonResult({ selectedObligationId: "obligation-sal-vey-notice" }),
+      };
     },
   });
   assert.equal(recovered.status, "baseline-complete");
-  assert.equal(baselineRuns, 1);
+  assert.equal(baselineSteps, 1);
 });

@@ -11,7 +11,7 @@ import {
 
 const MINUTE_MS = 60 * 1000;
 
-export const MODEL_EVALUATION_REVISION = "sal-resumable-season-v9-2026-08-31";
+export const MODEL_EVALUATION_REVISION = "sal-resumable-season-v10-2026-08-31";
 export const MODEL_EVALUATION_REPETITIONS = 3;
 export const MODEL_EVALUATION_CONCURRENCY = 3;
 

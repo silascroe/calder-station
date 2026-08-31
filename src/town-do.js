@@ -13,6 +13,11 @@ import {
 } from "./simulation.js";
 import { modelConflictEligible, planResidentDecision } from "./hybrid-planner.js";
 import { scriptedObligationPlan } from "./obligations.js";
+import {
+  advanceModelSeasonRun,
+  createModelSeasonRun,
+  modelSeasonResult,
+} from "./model-evaluation.js";
 
 // Keep the exported name and production key stable. Renaming the public town
 // must not strand the existing production Durable Object behind a new object
@@ -221,6 +226,16 @@ export class RookwoodTown {
     }
   }
 
+  readEvaluationRunMeta(revision = this.evaluationRevision()) {
+    const run = this.readEvaluationRun(revision);
+    return run ? {
+      kind: run.kind,
+      evaluationPhase: run.evaluationPhase ?? null,
+      completedDays: run.completedDays,
+      days: run.days,
+    } : null;
+  }
+
   writeEvaluationRun(run, revision = this.evaluationRevision()) {
     const id = this.evaluationRunId(revision);
     if (!id || !run || typeof run !== "object") {
@@ -241,6 +256,58 @@ export class RookwoodTown {
   deleteEvaluationRun(revision = this.evaluationRevision()) {
     const id = this.evaluationRunId(revision);
     if (id) this.sql.exec("DELETE FROM town_evaluation_runs WHERE id = ?", id);
+  }
+
+  async evaluationStep({ revision, phase, days = 90, chunkDays = 7, wallClock } = {}) {
+    if (this.environment !== STAGING_ENVIRONMENT) {
+      throw new RangeError("Model evaluation runs exist only in staging");
+    }
+    if (revision !== this.evaluationRevision()) {
+      throw new RangeError("Evaluation run revision does not match the staging configuration");
+    }
+    if (!["baseline", "assisted"].includes(phase)) {
+      throw new RangeError("Evaluation run phase must be baseline or assisted");
+    }
+    if (!Number.isInteger(days) || days < 1 || days > 365) {
+      throw new RangeError("Evaluation run days must be between 1 and 365");
+    }
+    if (!Number.isInteger(chunkDays) || chunkDays < 1 || chunkDays > days) {
+      throw new RangeError("Evaluation run chunkDays must be between 1 and days");
+    }
+    const effectiveWallClock = wallClock === undefined ? new Date() : new Date(wallClock);
+    if (Number.isNaN(effectiveWallClock.getTime())) throw new TypeError("wallClock must be a valid date");
+
+    let run = this.readEvaluationRun(revision);
+    if (run && run.evaluationPhase !== phase) {
+      throw new RangeError("Stored evaluation run phase does not match the requested phase");
+    }
+    if (!run) {
+      run = await createModelSeasonRun({ days });
+      run.evaluationPhase = phase;
+      // A baseline has no paid side effect, so its starting snapshot may be
+      // durable before the first chunk. An assisted run must not be marked
+      // recoverable until its first provider call and consequences persist.
+      if (phase === "baseline") this.writeEvaluationRun(run, revision);
+    }
+
+    const throughDay = Math.min(days, run.completedDays + chunkDays);
+    const advanced = await advanceModelSeasonRun(run, {
+      mode: phase,
+      env: this.env,
+      fetchImpl: this.env?.DEEPSEEK_FETCH ?? globalThis.fetch,
+      wallClock: effectiveWallClock,
+      throughDay,
+    });
+    this.writeEvaluationRun({ ...advanced, evaluationPhase: phase }, revision);
+    const complete = advanced.completedDays >= days;
+    return {
+      revision,
+      phase,
+      completedDays: advanced.completedDays,
+      totalDays: days,
+      complete,
+      result: complete ? modelSeasonResult(advanced) : null,
+    };
   }
 
   readEvents(limit = DEFAULT_EVENT_LIMIT) {
@@ -363,6 +430,20 @@ export class RookwoodTown {
       }
     }
 
+    if (request.method === "POST" && url.pathname === "/evaluation-step") {
+      if (this.environment !== STAGING_ENVIRONMENT) {
+        return json({ error: "Model evaluation storage exists only in staging." }, 404);
+      }
+      try {
+        return json(await this.evaluationStep(await request.json()));
+      } catch (error) {
+        if (error instanceof RangeError || error instanceof TypeError || error instanceof SyntaxError) {
+          return json({ error: error.message }, 400);
+        }
+        throw error;
+      }
+    }
+
     if (request.method === "DELETE" && url.pathname === "/evaluation-run") {
       if (this.environment !== STAGING_ENVIRONMENT) {
         return json({ error: "Model evaluation storage exists only in staging." }, 404);
@@ -457,6 +538,13 @@ export class RookwoodTown {
           return json({ error: "Model evaluation storage exists only in staging." }, 404);
         }
         return json(this.readEvaluationRun());
+      }
+
+      if (url.pathname === "/evaluation-run-meta") {
+        if (this.environment !== STAGING_ENVIRONMENT) {
+          return json({ error: "Model evaluation storage exists only in staging." }, 404);
+        }
+        return json(this.readEvaluationRunMeta());
       }
 
       return json({ error: "Town object route not found." }, 404);

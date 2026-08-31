@@ -36,7 +36,7 @@ Success means a fresh staging Calder Station can run for 90 simulated days, prod
 - Staging deployments wait for and record the terminal real-model report; blocked, failed, or timed-out evaluation makes the deployment visibly fail instead of leaving paid-system verification as an informal follow-up.
 - The combined v7 matrix-and-season invocation stranded its `running` lease. V8 removes the already-answered matrix from scheduled work, checkpoints the free baseline in one cron phase, and leases the one-call assisted season in a later phase. Free work may recover from a stale lease; paid work never retries blindly.
 - V8 reached the real staging Worker with its Durable Object and DeepSeek secret, but the free 90-day baseline remained `baseline-running` across repeated cron attempts and never reached the paid phase. The local replay takes seconds; the scheduled CPU boundary made a phase marker without a persisted run snapshot insufficient.
-- V9 keeps the same authoritative engine and one-call experiment, but stores the full resumable scenario run in a staging-only SQLite table and advances it in seven-day chunks. Both environments explicitly request the paid five-minute CPU limit; an assisted phase resumes only when its snapshot is present.
+- V9 implemented the same authoritative engine and one-call experiment with a staging-only SQLite snapshot, but its deployment was rejected before upload because the Free account does not support the requested paid five-minute Worker CPU limit; it made no provider calls. V10 moves each seven-day step inside the staging Durable Object and removes that unsupported setting. An assisted phase resumes only when its snapshot is present.
 - Resident schedules now span the fictional day independently of provider price windows. Persistent operation explicitly pauses on downtime, guards alarm retries against double advancement, and guards exact planning instants against duplicate model spend. The paid evaluator writes a running lease and never auto-retries a failed or interrupted revision.
 - Caught alarm failures are health-visible and schedule a fresh attempt one hour later, so Cloudflare's finite automatic retry budget cannot quietly stop the town forever.
 - Resident projections now retain a capped twelve-item turning-point record for model choices, failures, broken promises, and commitment interruptions. The Folio displays it separately from recent traffic, keeping long-horizon consequences visible without growing the town projection indefinitely.
@@ -49,7 +49,7 @@ The action queue is intentionally finite: each plan has at most five actions, ea
 
 ## Next useful work
 
-1. Complete the v9 genuine 90-day model-assisted comparison and inspect causal divergence at Days 1, 7, 30, and 90.
+1. Complete the v10 genuine 90-day model-assisted comparison and inspect causal divergence at Days 1, 7, 30, and 90.
 2. Decide from evidence—not a manufactured incident—whether ordinary long-horizon play needs another source of genuine conflicts.
 3. If personal history needs deeper retrieval than twelve turning points, add indexed event-person lookup in SQLite rather than expanding the projection cap.
 

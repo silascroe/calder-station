@@ -16,6 +16,8 @@ test("production and staging declare isolated persistent bindings", () => {
   assert.equal(result.durableObjectClass, "RookwoodTown");
   assert.equal(config.env.staging.triggers.crons.length, 1);
   assert.equal(config.env.staging.vars.MODEL_EVALUATION_REVISION, MODEL_EVALUATION_REVISION);
+  assert.equal("limits" in config, false);
+  assert.equal("limits" in config.env.staging, false);
 });
 
 test("main deploys isolated staging automatically while production stays manual", () => {

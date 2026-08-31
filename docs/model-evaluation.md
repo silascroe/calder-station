@@ -79,6 +79,10 @@ This revision removed the already-answered matrix from scheduled staging work an
 
 The important result is operational: a phase marker alone was not enough. The runner needed a durable simulation snapshot, not merely a durable status string.
 
-## Next revision
+## `sal-resumable-season-v9-2026-08-31`
 
-`sal-resumable-season-v9-2026-08-31` keeps the same experiment but advances each baseline or assisted season through seven-day snapshots stored in the staging Durable Object's SQLite database. A scheduled invocation may complete all thirteen chunks; if CPU or runtime termination interrupts it, the next quarter-hour trigger resumes from the last stored chunk. The five-minute paid CPU limit is declared explicitly for both environments. The free phase may retry or resume; an assisted phase resumes only with a persisted snapshot, and otherwise remains terminal so an unknown model response is never silently repurchased.
+This revision implemented resumable seven-day snapshots, but its deployment was rejected before upload because the Cloudflare account is on the Free plan and the configuration requested the paid-only five-minute Worker CPU limit. It produced no deployed state and no provider calls.
+
+## `sal-resumable-season-v10-2026-08-31`
+
+V10 keeps the same experiment but moves each baseline or assisted seven-day step into the staging Durable Object. The Worker cron handler makes bounded internal requests and does not carry the full run snapshot. The configuration no longer requests a paid-only CPU limit. The free phase may retry or resume; an assisted phase resumes only with a persisted snapshot, and otherwise remains terminal so an unknown provider response is never silently repurchased.
