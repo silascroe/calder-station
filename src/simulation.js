@@ -20,6 +20,7 @@ import { schedulePlanActions } from "./travel.js";
 const MINUTE_MS = 60 * 1000;
 const HOUR_MINUTES = 60;
 const DAY_MS = 24 * 60 * MINUTE_MS;
+const MAX_RESIDENT_TURNING_POINTS = 12;
 const CANONICAL_SUMMARY = "A small town continuing under deterministic game-AI rules.";
 
 export const DEFAULT_START_TIME = "2026-08-31T00:00:00.000Z";
@@ -162,6 +163,35 @@ function appendEvent(state, {
   if (action) event.action = action;
   state.events.push(event);
   state.stats.eventCount = (state.stats.eventCount ?? 0) + 1;
+  const personalTurningPoint = event.source === "model"
+    || event.type === "model-fallback"
+    || (event.type === "obligation" && (event.relationshipDelta ?? 0) < 0)
+    || (event.type === "action-interrupted" && Boolean(event.obligationId));
+  if (personalTurningPoint) {
+    const obligation = event.obligationId
+      ? state.obligations.find(({ id }) => id === event.obligationId)
+      : null;
+    const threadId = obligation?.seriesId ?? event.obligationId ?? event.reason ?? event.type;
+    const turningPointKey = event.source === "model"
+      ? `model:${threadId}`
+      : event.type === "model-fallback"
+        ? `model-fallback:${threadId}`
+        : `${event.type}:${threadId}`;
+    for (const residentId of new Set([event.actorId, event.relatedActorId].filter(Boolean))) {
+      const resident = state.residents.find(({ id }) => id === residentId);
+      if (!resident) continue;
+      resident.turningPoints = Array.isArray(resident.turningPoints) ? resident.turningPoints : [];
+      const previousIndex = resident.turningPoints.findIndex((point) => point.turningPointKey === turningPointKey);
+      const previous = previousIndex >= 0 ? resident.turningPoints.splice(previousIndex, 1)[0] : null;
+      resident.turningPoints.unshift({
+        ...event,
+        turningPointKey,
+        firstAt: previous?.firstAt ?? previous?.at ?? event.at,
+        occurrences: (previous?.occurrences ?? 0) + 1,
+      });
+      resident.turningPoints = resident.turningPoints.slice(0, MAX_RESIDENT_TURNING_POINTS);
+    }
+  }
   return event;
 }
 
@@ -256,6 +286,8 @@ function normalizeRuntimeState(state) {
     resident.lastEncounterAt ??= null;
     resident.lastEncounterWithId ??= null;
     resident.socialCount ??= 0;
+    resident.turningPoints = Array.isArray(resident.turningPoints) ? resident.turningPoints : [];
+    resident.turningPoints = resident.turningPoints.slice(0, MAX_RESIDENT_TURNING_POINTS);
   }
 
   state.obligations = state.obligations.map((obligation) => (
@@ -662,6 +694,7 @@ function residentStateFromSeed(state, residentSeed, scheduledAfter, ids, status 
     lastEncounterAt: null,
     lastEncounterWithId: null,
     socialCount: 0,
+    turningPoints: [],
   };
   resident.nextPlanAt = nextRoutineDecision(state, resident.id, scheduledAfter, ids).toISOString();
   resident.nextDecisionAt = resident.nextPlanAt;
@@ -809,6 +842,7 @@ export async function advanceTown(state, {
  */
 export function reconcileTownWithSeed(state, { seedData = townSeed } = {}) {
   const runtimeBackfillNeeded = !state.civicIncidents
+    || (state.residents ?? []).some((resident) => !Array.isArray(resident.turningPoints))
     || (state.relationships ?? []).some((relationship) => (
       relationship.baselineStrength === undefined
       || relationship.tension === undefined

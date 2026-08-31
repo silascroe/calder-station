@@ -45,6 +45,12 @@ test("the staging runner reports useful 1, 7, 30, and 90 day checkpoints", async
   assert.equal(Object.keys(final.longHorizon.personalHistories).length, 15);
   assert.equal(Object.keys(final.longHorizon.placeParticipation).length, 14);
   assert.ok(final.longHorizon.dailyPatterns.mara.dominantShare > 0);
+  assert.ok(result.state.residents.some(({ turningPoints }) => turningPoints.length > 0));
+  assert.ok(result.state.residents.every(({ turningPoints }) => turningPoints.length <= 12));
+  assert.ok(result.state.residents.every(({ turningPoints }) => (
+    new Set(turningPoints.map(({ turningPointKey }) => turningPointKey)).size === turningPoints.length
+  )));
+  assert.ok(result.state.residents.find(({ id }) => id === "sal").turningPoints.some(({ occurrences }) => occurrences > 1));
 });
 
 test("the same seed and rules produce the same long-horizon report", async () => {

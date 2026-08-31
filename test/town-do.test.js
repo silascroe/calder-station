@@ -169,6 +169,7 @@ test("current-revision evolved state persists runtime metadata backfills", async
   delete evolved.civicIncidents;
   delete evolved.stats.civicObligationCreatedCount;
   delete evolved.stats.conflictedPlanCount;
+  delete evolved.residents[0].turningPoints;
   for (const relationship of evolved.relationships) {
     delete relationship.baselineStrength;
     delete relationship.tension;
@@ -187,6 +188,7 @@ test("current-revision evolved state persists runtime metadata backfills", async
   assert.ok(persisted.civicIncidents.chains["night-route"]);
   assert.equal(persisted.relationships[0].interactionCount, 0);
   assert.equal(persisted.stats.conflictedPlanCount, 0);
+  assert.deepEqual(persisted.residents[0].turningPoints, []);
 });
 
 test("event history preserves insertion order past four-digit IDs and repairs a stale sequence", async () => {
@@ -265,6 +267,11 @@ test("a due Sal decision uses one model plan and records its usage", async () =>
   assert.equal(requestContext.resident.energy, 86);
   assert.equal(requestContext.resident.hunger, 23);
   assert.ok([...storage.sql.eventRows.values()].some(({ event_json }) => JSON.parse(event_json).source === "model"));
+  const sal = state.residents.find(({ id }) => id === "sal");
+  const jamie = state.residents.find(({ id }) => id === "vey");
+  assert.ok(sal.turningPoints.some(({ source }) => source === "model"));
+  assert.ok(sal.turningPoints.every(({ turningPointKey, occurrences }) => turningPointKey && occurrences >= 1));
+  assert.ok(jamie.turningPoints.some(({ obligationId }) => obligationId === "obligation-sal-vey-notice"));
 });
 
 test("a failed model request falls back without stopping the town", async () => {
@@ -297,6 +304,7 @@ test("a failed model request falls back without stopping the town", async () => 
     "test-sal-route-report",
   );
   assert.equal(state.residents.find(({ id }) => id === "sal").dailyPlan.model.fallback, true);
+  assert.ok(state.residents.find(({ id }) => id === "sal").turningPoints.some(({ type }) => type === "model-fallback"));
   assert.ok(events.some((event) => event.type === "model-fallback" && event.reason === "network_error"));
 });
 

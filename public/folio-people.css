@@ -68,6 +68,7 @@
 .paper-relationship > strong b { display: block; font: italic 20px var(--folio-serif); font-weight: 400; }
 .paper-relationship > strong small { color: var(--folio-paper-dim); font: 700 6px var(--folio-mono); letter-spacing: .08em; text-transform: uppercase; }
 .paper-history { margin-top: 30px; padding-top: 22px; border-top: 3px double var(--folio-paper-line); }
+.turning-point-history { background: rgba(124, 96, 61, .055); margin-inline: -12px; padding: 18px 12px 0; border-top-style: solid; }
 .paper-history-row { display: grid; grid-template-columns: 52px 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--folio-paper-line); }
 .paper-history-row > span { color: var(--folio-paper-dim); font: 700 9px var(--folio-mono); }
 .paper-history-row p { margin: 0; color: var(--folio-paper-muted); font-size: 11px; line-height: 1.55; }

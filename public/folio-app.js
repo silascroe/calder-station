@@ -476,6 +476,7 @@ function residentDossier(resident, { compact = false } = {}) {
     .filter((event) => event.actorId === resident.id || event.relatedActorId === resident.id || event.actor === resident.name);
   const meaningfulEvents = residentEvents.filter(isConsequentialEvent);
   const recentEvents = (meaningfulEvents.length ? meaningfulEvents : residentEvents).slice(0, compact ? 4 : 8);
+  const turningPoints = (resident.turningPoints ?? []).slice(0, compact ? 2 : 6);
   const commitments = openObligationsFor(resident.id);
   const lastEncounterWith = resident.lastEncounterWithId ? residentById(resident.lastEncounterWithId) : null;
   const residentIndex = store.town.residents.findIndex(({ id }) => id === resident.id) + 1;
@@ -529,6 +530,16 @@ function residentDossier(resident, { compact = false } = {}) {
               </div>
             `).join("") : "<p class=\"paper-empty\">No recorded ties yet.</p>"}
           </div>
+
+          ${turningPoints.length ? `<div class="paper-history turning-point-history">
+            <p class="paper-label">Turning points</p>
+            ${turningPoints.map((event) => `
+              <div class="paper-history-row">
+                <span>${escapeHtml(eventStamp(event))}</span>
+                <p><strong>${escapeHtml(eventActor(event).split(" ")[0])}</strong> ${escapeHtml(eventText(event))}${event.occurrences > 1 ? `<small>This thread has surfaced ${escapeHtml(event.occurrences)} times since ${escapeHtml(eventStamp({ at: event.firstAt, time: event.firstAt?.slice(11, 16) }))}.</small>` : eventContext(event) ? `<small>${escapeHtml(eventContext(event))}</small>` : ""}</p>
+              </div>
+            `).join("")}
+          </div>` : ""}
 
           <div class="paper-history">
             <p class="paper-label">Recent record</p>

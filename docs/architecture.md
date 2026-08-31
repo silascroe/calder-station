@@ -48,6 +48,8 @@ The `TOWN` binding is declared separately in each Wrangler environment because D
 
 Seed reconciliation adds authored records and refreshes authored identity/routine metadata without resetting evolved needs, location, queue, relationships, or history. Stable internal IDs remain stable across editorial renames.
 
+Each resident projection also retains at most twelve distinct personal turning-point threads: model-authored choices, provider fallbacks, broken or delayed promises, and obligation-related interruptions. Repeated failures in one obligation series update that thread's count and latest occurrence instead of crowding out unrelated history. These are references-in-context, not a replacement event log. The cap keeps projection growth flat while allowing a Day-1 consequence to remain visible after the newest town-wide event page has moved on. Existing production projections begin collecting this index after migration; historical SQLite events are not rewritten or bulk-scanned merely to backfill presentation data.
+
 Runtime metadata backfills—civic progress, generic obligation actions, relationship tension fields, and new counters—are detected independently of seed revision and persisted after loading an evolved projection. They never replace the existing resident, queue, relationship strength, or event history.
 
 ## Long-horizon runner
@@ -87,7 +89,7 @@ Routine mechanics remain scripted. More model-eligible incident classes should w
 
 ## Viewer
 
-The Folio UI is a read-only register, not an operations console. It shows the current hour, journal, places, people, relationships, queued actions, and individual histories. Portrait assets are part of the resident identity presentation. The map is a separate route over the same projection, and browser routes are served by the static Worker asset layer.
+The Folio UI is a read-only register, not an operations console. It shows the current hour, journal, places, people, relationships, queued actions, recent records, and bounded personal turning points. Portrait assets are part of the resident identity presentation. The map is a separate route over the same projection, and browser routes are served by the static Worker asset layer.
 
 Polling remains once per minute. WebSockets, controls that mutate the town, and a second frontend generation are deferred until a concrete need appears.
 
