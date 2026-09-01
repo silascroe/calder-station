@@ -444,6 +444,7 @@ export function summarizeScenario(initial, state, extremes) {
       calls: state.stats.modelCalls ?? 0,
       attempts: state.stats.modelAttempts ?? 0,
       fallbacks: state.stats.modelFallbacks ?? 0,
+      costSkips: state.stats.modelCostSkips ?? 0,
       promptTokens: state.stats.modelPromptTokens ?? 0,
       completionTokens: state.stats.modelCompletionTokens ?? 0,
       promptCacheHitTokens: state.stats.modelPromptCacheHitTokens ?? 0,

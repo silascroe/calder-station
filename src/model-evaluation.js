@@ -11,7 +11,7 @@ import {
 
 const MINUTE_MS = 60 * 1000;
 
-export const MODEL_EVALUATION_REVISION = "sal-resumable-season-v10-2026-08-31";
+export const MODEL_EVALUATION_REVISION = "sal-resumable-season-v11-2026-09-01";
 export const MODEL_EVALUATION_REPETITIONS = 3;
 export const MODEL_EVALUATION_CONCURRENCY = 3;
 
@@ -283,6 +283,7 @@ export async function advanceModelSeasonRun(run, {
   fetchImpl = env?.DEEPSEEK_FETCH ?? globalThis.fetch,
   wallClock = new Date(),
   throughDay = run?.days,
+  decisionAdapter = null,
 } = {}) {
   if (mode !== "baseline" && mode !== "assisted") {
     throw new RangeError("model season mode must be baseline or assisted");
@@ -292,7 +293,7 @@ export async function advanceModelSeasonRun(run, {
   }
   const options = { throughDay };
   if (mode === "assisted") {
-    options.decisionAdapter = assistedDecisionAdapter({ env, fetchImpl, wallClock });
+    options.decisionAdapter = decisionAdapter ?? assistedDecisionAdapter({ env, fetchImpl, wallClock });
   }
   return advanceScenarioRun(run, options);
 }
@@ -423,6 +424,7 @@ export async function runModelEvaluation({
     successfulModelPlans: results.filter(({ source }) => source === "model").length + nonNegativeInteger(longModel.calls),
     fallbackCount: totalFallbacks,
     fallbackRate: totalCalls === 0 ? 0 : totalFallbacks / totalCalls,
+    modelCostSkips: nonNegativeInteger(longModel.costSkips),
     choices,
     executedOutcomes,
     promptTokens: promptTokens + nonNegativeInteger(longModel.promptTokens),

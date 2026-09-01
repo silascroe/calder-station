@@ -30,6 +30,7 @@ export const HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000;
 export const DEFAULT_EVENT_LIMIT = 80;
 export const MAX_EVENT_LIMIT = 200;
 const MODEL_EVALUATION_KEY_PREFIX = "model-evaluation:";
+const MODEL_EVALUATION_DECISIONS_KEY_PREFIX = "model-evaluation-decisions:";
 const MODEL_DECISION_KEY_PREFIX = "model-decision:";
 const ALARM_ATTEMPT_KEY = "alarm-attempt";
 const ALARM_FAILURE_KEY = "alarm-failure";
@@ -253,9 +254,39 @@ export class RookwoodTown {
     );
   }
 
-  deleteEvaluationRun(revision = this.evaluationRevision()) {
+  async deleteEvaluationRun(revision = this.evaluationRevision()) {
     const id = this.evaluationRunId(revision);
     if (id) this.sql.exec("DELETE FROM town_evaluation_runs WHERE id = ?", id);
+    await this.clearEvaluationDecisions(revision);
+  }
+
+  evaluationDecisionKey(revision = this.evaluationRevision()) {
+    return revision ? `${MODEL_EVALUATION_DECISIONS_KEY_PREFIX}${revision}` : null;
+  }
+
+  async readEvaluationDecisions(revision = this.evaluationRevision()) {
+    const key = this.evaluationDecisionKey(revision);
+    if (!key || typeof this.ctx.storage.get !== "function") return {};
+    const value = await this.ctx.storage.get(key);
+    return value && typeof value === "object" ? value : {};
+  }
+
+  async writeEvaluationDecision(revision, decisionKey, value) {
+    const key = this.evaluationDecisionKey(revision);
+    if (!key || typeof this.ctx.storage.put !== "function") return;
+    const decisions = await this.readEvaluationDecisions(revision);
+    decisions[decisionKey] = clone(value);
+    await this.ctx.storage.put(key, decisions);
+  }
+
+  async clearEvaluationDecisions(revision = this.evaluationRevision()) {
+    const key = this.evaluationDecisionKey(revision);
+    if (!key) return;
+    if (typeof this.ctx.storage.delete === "function") {
+      await this.ctx.storage.delete(key);
+    } else if (typeof this.ctx.storage.put === "function") {
+      await this.ctx.storage.put(key, {});
+    }
   }
 
   async evaluationStep({ revision, phase, days = 90, chunkDays = 7, wallClock } = {}) {
@@ -285,8 +316,9 @@ export class RookwoodTown {
       run = await createModelSeasonRun({ days });
       run.evaluationPhase = phase;
       // A baseline has no paid side effect, so its starting snapshot may be
-      // durable before the first chunk. An assisted run must not be marked
-      // recoverable until its first provider call and consequences persist.
+      // durable before the first chunk. Assisted decisions are recorded in a
+      // revision-scoped ledger before the provider request and after a valid
+      // response, so a chunk can be replayed without buying the same choice.
       if (phase === "baseline") this.writeEvaluationRun(run, revision);
     }
 
@@ -297,6 +329,13 @@ export class RookwoodTown {
       fetchImpl: this.env?.DEEPSEEK_FETCH ?? globalThis.fetch,
       wallClock: effectiveWallClock,
       throughDay,
+      decisionAdapter: phase === "assisted"
+        ? (input) => this.evaluationDecisionPlan(input, {
+          revision,
+          phase,
+          wallClock: effectiveWallClock,
+        })
+        : null,
     });
     this.writeEvaluationRun({ ...advanced, evaluationPhase: phase }, revision);
     const complete = advanced.completedDays >= days;
@@ -308,6 +347,62 @@ export class RookwoodTown {
       complete,
       result: complete ? modelSeasonResult(advanced) : null,
     };
+  }
+
+  async evaluationDecisionPlan(input, { revision, phase, wallClock } = {}) {
+    if (phase !== "assisted") return scriptedObligationPlan(input);
+    const resident = input?.resident;
+    const now = new Date(input?.now);
+    if (!resident?.id || Number.isNaN(now.getTime())) {
+      throw new TypeError("An assisted evaluation decision requires a resident and simulated time");
+    }
+
+    const decisionKey = `${phase}:${resident.id}:${now.toISOString()}`;
+    const decisions = await this.readEvaluationDecisions(revision);
+    const prior = decisions[decisionKey];
+    if (prior?.status === "complete" && prior.plan) return clone(prior.plan);
+    if (prior?.status === "pending") {
+      return {
+        ...scriptedObligationPlan(input),
+        modelTelemetry: {
+          attempted: false,
+          fallback: true,
+          skipped: true,
+          errorCode: "interrupted-request-guard",
+          policyReason: "prior-request-outcome-unknown",
+          model: this.env?.DEEPSEEK_MODEL ?? null,
+        },
+      };
+    }
+
+    let requestStarted = false;
+    const providerFetch = this.env?.DEEPSEEK_FETCH ?? globalThis.fetch;
+    const guardedFetch = async (...args) => {
+      requestStarted = true;
+      await this.writeEvaluationDecision(revision, decisionKey, {
+        status: "pending",
+        residentId: resident.id,
+        simulatedAt: now.toISOString(),
+        requestedAt: new Date(wallClock).toISOString(),
+      });
+      return providerFetch(...args);
+    };
+    const plan = await planResidentDecision(input, {
+      env: this.env,
+      fetchImpl: guardedFetch,
+      wallClock,
+      bypassPeakPricing: true,
+    });
+    if (requestStarted) {
+      await this.writeEvaluationDecision(revision, decisionKey, {
+        status: "complete",
+        residentId: resident.id,
+        simulatedAt: now.toISOString(),
+        completedAt: new Date(wallClock).toISOString(),
+        plan,
+      });
+    }
+    return plan;
   }
 
   readEvents(limit = DEFAULT_EVENT_LIMIT) {
@@ -448,7 +543,7 @@ export class RookwoodTown {
       if (this.environment !== STAGING_ENVIRONMENT) {
         return json({ error: "Model evaluation storage exists only in staging." }, 404);
       }
-      this.deleteEvaluationRun();
+      await this.deleteEvaluationRun();
       return json({ ok: true });
     }
 

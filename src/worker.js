@@ -179,7 +179,22 @@ export async function runScheduledModelEvaluation(env, {
   const current = await currentResponse.json();
   if (current.revision === revision && ["complete", "failed"].includes(current.status)) return current;
   const runMeta = await readEvaluationRunMeta(stub);
-  if (current.revision === revision && current.status === "assisted-running" && !runMeta) return current;
+  if (current.revision === revision && current.status === "assisted-running" && !runMeta) {
+    // The assisted phase is paid work. If its replay snapshot is absent, the
+    // previous invocation may have spent a request before it was persisted.
+    // Do not retry blindly; make the revision terminal and require a new
+    // explicit evaluation revision before spending again.
+    const failed = {
+      ...current,
+      status: "failed",
+      phase: "model-assisted-season",
+      checkedAt: new Date(wallClock).toISOString(),
+      error: "assisted-snapshot-missing",
+      paidCallsAtRisk: 1,
+    };
+    await storeEvaluation(stub, failed);
+    return failed;
+  }
   if (current.revision === revision && current.status === "baseline-running" && !runMeta) {
     const leaseAge = new Date(wallClock).getTime() - new Date(current.startedAt).getTime();
     if (Number.isFinite(leaseAge) && leaseAge < BASELINE_LEASE_MS) return current;
@@ -331,6 +346,7 @@ export async function runScheduledModelEvaluation(env, {
       successfulModelPlans: Number(model.calls ?? 0),
       fallbackCount,
       fallbackRate: calls === 0 ? 0 : fallbackCount / calls,
+      modelCostSkips: Number(model.costSkips ?? 0),
       choices: assisted.selectedObligationId ? { [assisted.selectedObligationId]: 1 } : {},
       promptTokens: Number(model.promptTokens ?? 0),
       completionTokens: Number(model.completionTokens ?? 0),

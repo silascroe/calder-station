@@ -117,8 +117,8 @@ test("staging exposes a read-only evaluation report without a public trigger", a
   assert.equal(mutation.status, 405);
 });
 
-test("the scheduled evaluator never automatically repeats a terminal or paid in-flight revision", async () => {
-  for (const status of ["complete", "failed", "assisted-running"]) {
+test("the scheduled evaluator never automatically repeats a terminal revision", async () => {
+  for (const status of ["complete", "failed"]) {
     let reads = 0;
     const report = { revision: "evaluation-test", status, calls: 24 };
     const env = {
@@ -142,6 +142,48 @@ test("the scheduled evaluator never automatically repeats a terminal or paid in-
     assert.equal(reads, 1);
   }
   assert.deepEqual(await runScheduledModelEvaluation({ TOWN_ENV: "production" }), { status: "skipped-non-staging" });
+});
+
+test("the scheduled evaluator terminalizes an assisted revision with no replay snapshot", async () => {
+  let current = {
+    revision: "evaluation-test",
+    status: "assisted-running",
+    phase: "model-assisted-season",
+    paidCallsAtRisk: 1,
+  };
+  let writes = 0;
+  const stub = {
+    fetch: async (request) => {
+      const pathname = new URL(request.url).pathname;
+      if (pathname === "/evaluation-run-meta") return new Response("null");
+      if (request.method === "POST") {
+        current = await request.json();
+        writes += 1;
+        return new Response(JSON.stringify({ ok: true }));
+      }
+      return new Response(JSON.stringify(current));
+    },
+  };
+  const env = {
+    TOWN_ENV: "staging",
+    MODEL_EVALUATION_REVISION: "evaluation-test",
+    DEEPSEEK_API_KEY: "test-key",
+    TOWN: { getByName: () => stub },
+  };
+
+  const failed = await runScheduledModelEvaluation(env, {
+    wallClock: new Date("2026-09-01T00:00:00.000Z"),
+  });
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.error, "assisted-snapshot-missing");
+  assert.equal(failed.paidCallsAtRisk, 1);
+  assert.equal(writes, 1);
+
+  const terminal = await runScheduledModelEvaluation(env, {
+    wallClock: new Date("2026-09-01T00:15:00.000Z"),
+  });
+  assert.deepEqual(terminal, failed);
+  assert.equal(writes, 1);
 });
 
 function seasonResult({ selectedObligationId, calls = 0 } = {}) {

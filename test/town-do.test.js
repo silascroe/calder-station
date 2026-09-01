@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import worker from "../src/worker.js";
 import { createInitialTown } from "../src/simulation.js";
 import { materializeObligation } from "../src/obligations.js";
+import { createModelSeasonRun } from "../src/model-evaluation.js";
 import { RookwoodTown } from "../src/town-do.js";
 
 class Cursor {
@@ -73,6 +74,7 @@ class FakeStorage {
   async setAlarm(at) { this.alarmAt = at; }
   async get(key) { return this.values.get(key); }
   async put(key, value) { this.values.set(key, value); }
+  async delete(key) { this.values.delete(key); }
 }
 
 class FakeContext {
@@ -459,6 +461,108 @@ test("staging persists and clears resumable evaluation runs in SQLite", async ()
   const deleted = await town.fetch(new Request("https://town.internal/evaluation-run", { method: "DELETE" }));
   assert.equal(deleted.status, 200);
   assert.equal(storage.sql.runRows.size, 0);
+});
+
+test("an assisted evaluation reuses a completed provider decision after snapshot persistence fails", async () => {
+  let calls = 0;
+  const { town } = makeTown({
+    TOWN_ENV: "staging",
+    MODEL_EVALUATION_REVISION: "evaluation-test",
+    DEEPSEEK_API_KEY: "test-key",
+    DEEPSEEK_FETCH: async (_url, init) => {
+      calls += 1;
+      const body = JSON.parse(init.body);
+      const prompt = body.messages.at(-1).content;
+      const context = JSON.parse(prompt.slice(prompt.indexOf("\n") + 1));
+      const selected = context.legalChoices[0];
+      return new Response(JSON.stringify({
+        id: "chatcmpl-evaluation-test",
+        model: "deepseek-v4-flash",
+        choices: [{
+          finish_reason: "stop",
+          message: {
+            content: JSON.stringify({
+              obligationId: selected.obligationId,
+              choice: selected.choice,
+              note: "The first available commitment is the safest bounded choice.",
+            }),
+          },
+        }],
+        usage: { prompt_tokens: 400, completion_tokens: 40, total_tokens: 440 },
+      }), { status: 200 });
+    },
+  });
+  const run = await createModelSeasonRun({ days: 1 });
+  run.evaluationPhase = "assisted";
+  town.writeEvaluationRun(run, "evaluation-test");
+  const originalWrite = town.writeEvaluationRun.bind(town);
+  town.writeEvaluationRun = () => {
+    throw new Error("simulated snapshot write interruption");
+  };
+
+  await assert.rejects(
+    () => town.evaluationStep({
+      revision: "evaluation-test",
+      phase: "assisted",
+      days: 1,
+      chunkDays: 1,
+      wallClock: "2026-09-01T00:00:00.000Z",
+    }),
+    /simulated snapshot write interruption/,
+  );
+
+  town.writeEvaluationRun = originalWrite;
+  const replay = await town.evaluationStep({
+    revision: "evaluation-test",
+    phase: "assisted",
+    days: 1,
+    chunkDays: 1,
+    wallClock: "2026-09-01T00:00:00.000Z",
+  });
+
+  assert.equal(calls, 1);
+  assert.equal(replay.complete, true);
+  assert.equal(replay.result.healthy, true);
+  assert.equal(replay.result.model.calls, 1);
+});
+
+test("an assisted evaluation does not retry a provider request with unknown outcome", async () => {
+  let calls = 0;
+  const { town, storage } = makeTown({
+    TOWN_ENV: "staging",
+    MODEL_EVALUATION_REVISION: "evaluation-test",
+    DEEPSEEK_API_KEY: "test-key",
+    DEEPSEEK_FETCH: async () => {
+      calls += 1;
+      throw new Error("must not call an outcome-unknown evaluation request again");
+    },
+  });
+  const run = await createModelSeasonRun({ days: 1 });
+  const resident = run.state.residents.find(({ id }) => id === "sal");
+  const now = new Date(resident.nextPlanAt);
+  const decisionKey = `assisted:${resident.id}:${now.toISOString()}`;
+  await storage.put("model-evaluation-decisions:evaluation-test", {
+    [decisionKey]: {
+      status: "pending",
+      residentId: resident.id,
+      simulatedAt: now.toISOString(),
+    },
+  });
+
+  const plan = await town.evaluationDecisionPlan(
+    { town: run.state, resident, now },
+    {
+      revision: "evaluation-test",
+      phase: "assisted",
+      wallClock: new Date("2026-09-01T00:00:00.000Z"),
+    },
+  );
+
+  assert.equal(calls, 0);
+  assert.equal(plan.source, "scripted");
+  assert.equal(plan.modelTelemetry.fallback, true);
+  assert.equal(plan.modelTelemetry.skipped, true);
+  assert.equal(plan.modelTelemetry.errorCode, "interrupted-request-guard");
 });
 
 test("a staging evaluation step advances the real scenario engine and returns a checkpoint", async () => {
