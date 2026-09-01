@@ -62,7 +62,7 @@ Each report includes:
 - action distribution and activity by location;
 - relationship changes and largest gains/losses;
 - commitments created, fulfilled, delayed, broken, open, and highest generation;
-- model attempts, successful calls, fallbacks, and token totals;
+- model attempts, successful calls, fallbacks, cost skips, and token totals;
 - min/max energy and hunger over the whole run;
 - duplicate IDs, invalid references, overdue open commitments, due queue entries, need bounds, and obvious rest/no-activity loops.
 - repeated per-resident daily patterns, event-template concentration, relationship direction/saturation, social encounter coverage, any-causal-activity coverage, personal meaningful-history counts, and resident participation by place.

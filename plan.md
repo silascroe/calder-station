@@ -43,6 +43,11 @@ Success means a fresh staging Calder Station can run for 90 simulated days, prod
 - Resident projections now retain a capped twelve-item turning-point record for model choices, failures, broken promises, and commitment interruptions. The Folio displays it separately from recent traffic, keeping long-horizon consequences visible without growing the town projection indefinitely.
 - Assisted staging evaluations now record provider decisions in a revision-scoped Durable Object ledger: completed plans can be replayed after a snapshot-write failure, while outcome-unknown requests fall back and increment a visible cost-skip count. A missing assisted snapshot is terminalized instead of risking an automatic duplicate paid request.
 
+## Operational follow-up — 2026-09-01
+
+- V11 staging deployment (GitHub Actions run 33460394401) passed the real Durable Object smoke test and completed the fresh 90-day baseline/assisted comparison. It made one valid `deepseek-v4-flash` call, with 1,967 prompt tokens (1,920 cache-hit, 47 cache-miss), 45 completion tokens, zero fallbacks, zero cost skips, and an estimated $0.00010696 spend. The model again chose the civic route, and the assisted run matched baseline at Days 1, 7, 30, and 90 with zero divergence.
+- Production was not deployed or opened during this follow-up. Its canonical `rookwood` state remains isolated from the staging `rookwood-staging` evaluation object and can be updated later through the explicit production workflow dispatch.
+
 ## What is deliberately true now
 
 Ordinary code owns time, needs, locations, queues, legality, movement, relationships, obligations, and consequences. The model may propose a bounded intent but cannot write world state. The dashboard reads projections and events; it does not contain simulation rules.
@@ -51,7 +56,7 @@ The action queue is intentionally finite: each plan has at most five actions, ea
 
 ## Next useful work
 
-1. Keep DeepSeek participation narrow while observing the proven V10 staging comparison and the live town over time; the model matched the deterministic baseline at every reported checkpoint.
+1. Keep DeepSeek participation narrow while observing the proven V10/V11 staging comparisons and the live town over time; the model matched the deterministic baseline at every reported checkpoint.
 2. Decide from evidence—not a manufactured incident—whether ordinary long-horizon play needs another source of genuine conflicts, then add the smallest mechanic that creates a real downstream choice.
 3. If personal history needs deeper retrieval than twelve turning points, add indexed event-person lookup in SQLite rather than expanding the projection cap.
 
