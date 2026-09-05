@@ -1,4 +1,5 @@
 import { scriptedDecision } from "./scripted-decisions.js";
+import { activeReflectionFocus } from "./reflections.js";
 
 export const DAILY_PLAN_VERSION = 3;
 export const PLAN_ACTIONS = Object.freeze(["work", "eat", "rest", "deliver", "observe"]);
@@ -19,6 +20,12 @@ function offsetFromHour(now, hour) {
   if (!Number.isFinite(hour)) return null;
   const offset = Math.round(hour * 60 - minutesSinceUtcDay(now));
   return offset > 0 ? offset : null;
+}
+
+function offsetToNextOccurrence(now, hour) {
+  if (!Number.isFinite(hour)) return null;
+  const offset = Math.round(hour * 60 - minutesSinceUtcDay(now));
+  return offset > 0 ? offset : offset + 24 * 60;
 }
 
 function routineAction({
@@ -70,11 +77,16 @@ function socialCandidates(town, resident) {
       || left.target.id.localeCompare(right.target.id)
     ));
 
-  return candidates;
+  const focusTargetId = activeReflectionFocus(resident);
+  if (!focusTargetId) return candidates;
+  const focused = candidates.find(({ target }) => target.id === focusTargetId);
+  return focused ? [focused, ...candidates.filter(({ target }) => target.id !== focusTargetId)] : candidates;
 }
 
 function socialIntentionsFor(town, resident, actions, now) {
   const candidates = socialCandidates(town, resident);
+  const focusTargetId = activeReflectionFocus(resident);
+  const reflectionFocusActive = Boolean(focusTargetId && candidates.some(({ target }) => target.id === focusTargetId));
   const dayOrdinal = Math.floor(new Date(now).getTime() / (24 * 60 * 60 * 1000));
   const leastSeen = candidates[0];
   const needsIntroduction = (leastSeen?.relationship.interactionCount ?? 0) === 0;
@@ -97,8 +109,17 @@ function socialIntentionsFor(town, resident, actions, now) {
     }];
   }
 
-  if (!leastSeen || actions.length >= MAX_PLAN_ACTIONS || (!needsIntroduction && !needsRepair && !socialDay)) {
+  if (!leastSeen || (!needsIntroduction && !needsRepair && !socialDay && !reflectionFocusActive)) {
     return [];
+  }
+
+  if (actions.length >= MAX_PLAN_ACTIONS) {
+    if (!reflectionFocusActive) return [];
+    const removableIndex = actions.findIndex((action, index) => (
+      index > 0 && action.action === "observe" && (action.offsetMinutes ?? 0) > 0
+    ));
+    if (removableIndex < 0) return [];
+    actions.splice(removableIndex, 1);
   }
 
   const routine = leastSeen.target.routine ?? {};
@@ -123,7 +144,9 @@ function socialIntentionsFor(town, resident, actions, now) {
     },
   ].map((candidate) => ({
     ...candidate,
-    offsetMinutes: offsetFromHour(now, candidate.hour),
+    offsetMinutes: reflectionFocusActive
+      ? offsetToNextOccurrence(now, candidate.hour)
+      : offsetFromHour(now, candidate.hour),
   })).filter((candidate) => candidate.locationId && candidate.offsetMinutes !== null);
 
   const call = possibleCalls.sort((left, right) => left.offsetMinutes - right.offsetMinutes)[0];
@@ -147,7 +170,9 @@ function socialIntentionsFor(town, resident, actions, now) {
     actionIndex,
     locationId: visit.locationId,
     relationship: leastSeen.relationship.kind,
-    reason: needsRepair
+    reason: reflectionFocusActive
+      ? `is making time to call on ${leastSeen.target.name}`
+      : needsRepair
       ? `wants to clear the air with ${leastSeen.target.name}`
       : `is making time to call on ${leastSeen.target.name}`,
   }];

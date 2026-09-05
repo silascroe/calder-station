@@ -315,11 +315,12 @@ export class RookwoodTown {
     if (!run) {
       run = await createModelSeasonRun({ days });
       run.evaluationPhase = phase;
-      // A baseline has no paid side effect, so its starting snapshot may be
-      // durable before the first chunk. Assisted decisions are recorded in a
-      // revision-scoped ledger before the provider request and after a valid
-      // response, so a chunk can be replayed without buying the same choice.
-      if (phase === "baseline") this.writeEvaluationRun(run, revision);
+      // Persist the starting snapshot for both phases. Assisted decisions are
+      // recorded in a revision-scoped ledger before the provider request and
+      // after a valid response, so a crashed chunk can replay without buying
+      // the same choice. The scheduler may still terminalize a genuinely
+      // missing snapshot; normal paid work now always has one to resume from.
+      this.writeEvaluationRun(run, revision);
     }
 
     const throughDay = Math.min(days, run.completedDays + chunkDays);
@@ -596,6 +597,14 @@ export class RookwoodTown {
           modelCompletionTokens: state.stats.modelCompletionTokens,
           modelPromptCacheHitTokens: state.stats.modelPromptCacheHitTokens,
           modelPromptCacheMissTokens: state.stats.modelPromptCacheMissTokens,
+          reflectionCount: state.stats.reflectionCount ?? 0,
+          reflectionModelCalls: state.stats.reflectionModelCalls ?? 0,
+          reflectionAttempts: state.stats.reflectionAttempts ?? 0,
+          reflectionFallbacks: state.stats.reflectionFallbacks ?? 0,
+          reflectionPromptTokens: state.stats.reflectionPromptTokens ?? 0,
+          reflectionCompletionTokens: state.stats.reflectionCompletionTokens ?? 0,
+          reflectionPromptCacheHitTokens: state.stats.reflectionPromptCacheHitTokens ?? 0,
+          reflectionPromptCacheMissTokens: state.stats.reflectionPromptCacheMissTokens ?? 0,
           conflictedPlans: state.stats.conflictedPlanCount,
           evaluationRevision,
           evaluationStatus: evaluation?.status

@@ -42,7 +42,15 @@ function eventDiversity(events) {
     .map(([template, count]) => ({ template, count }))
     .sort((left, right) => right.count - left.count || left.template.localeCompare(right.template));
   const topTenCount = ranked.slice(0, 10).reduce((total, item) => total + item.count, 0);
-  const meaningfulTypes = new Set(["encounter", "obligation", "obligation-created", "action-interrupted", "model-fallback"]);
+  const meaningfulTypes = new Set([
+    "encounter",
+    "obligation",
+    "obligation-created",
+    "action-interrupted",
+    "model-fallback",
+    "reflection",
+    "reflection-fallback",
+  ]);
   return {
     total: events.length,
     uniqueTemplates: templates.size,
@@ -136,7 +144,15 @@ function relationshipDynamics(initial, state) {
 }
 
 function personalHistoryDiagnostics(state) {
-  const meaningfulTypes = new Set(["encounter", "obligation", "obligation-created", "action-interrupted", "model-fallback"]);
+  const meaningfulTypes = new Set([
+    "encounter",
+    "obligation",
+    "obligation-created",
+    "action-interrupted",
+    "model-fallback",
+    "reflection",
+    "reflection-fallback",
+  ]);
   return Object.fromEntries(state.residents.map((resident) => {
     const events = (state.events ?? []).filter((event) => (
       meaningfulTypes.has(event.type)
@@ -301,6 +317,13 @@ function invariantReport(initial, state) {
       !residentIdSet.has(relationship.fromId) || !residentIdSet.has(relationship.toId)
     ))
     .map(({ id, fromId, toId }) => ({ id, fromId, toId }));
+  const invalidReflectionTargets = state.residents
+    .filter((resident) => resident.reflection?.focusTargetId)
+    .filter((resident) => !(state.relationships ?? []).some((relationship) => (
+      (relationship.fromId === resident.id && relationship.toId === resident.reflection.focusTargetId)
+      || (relationship.toId === resident.id && relationship.fromId === resident.reflection.focusTargetId)
+    )))
+    .map(({ id, reflection }) => ({ id, focusTargetId: reflection.focusTargetId }));
   const invalidObligationReferences = (state.obligations ?? [])
     .filter((obligation) => (
       !residentIdSet.has(obligation.ownerId)
@@ -401,6 +424,7 @@ function invariantReport(initial, state) {
     duplicateObligationIds,
     invalidResidentLocations,
     invalidRelationshipResidents,
+    invalidReflectionTargets,
     invalidObligationReferences,
     invalidCivicProgress,
     invalidEventActors,
@@ -449,6 +473,16 @@ export function summarizeScenario(initial, state, extremes) {
       completionTokens: state.stats.modelCompletionTokens ?? 0,
       promptCacheHitTokens: state.stats.modelPromptCacheHitTokens ?? 0,
       promptCacheMissTokens: state.stats.modelPromptCacheMissTokens ?? 0,
+    },
+    reflections: {
+      count: state.stats.reflectionCount ?? 0,
+      modelCalls: state.stats.reflectionModelCalls ?? 0,
+      attempts: state.stats.reflectionAttempts ?? 0,
+      fallbacks: state.stats.reflectionFallbacks ?? 0,
+      promptTokens: state.stats.reflectionPromptTokens ?? 0,
+      completionTokens: state.stats.reflectionCompletionTokens ?? 0,
+      promptCacheHitTokens: state.stats.reflectionPromptCacheHitTokens ?? 0,
+      promptCacheMissTokens: state.stats.reflectionPromptCacheMissTokens ?? 0,
     },
     ranges,
     stats: {
@@ -545,6 +579,9 @@ export async function createScenarioRun({
 export async function advanceScenarioRun(run, {
   throughDay = run?.days,
   decisionAdapter = scriptedObligationPlan,
+  reflectionAdapter = null,
+  reflectionPolicy = null,
+  wallClock = new Date(),
 } = {}) {
   if (!run || typeof run !== "object") throw new TypeError("scenario run is required");
   validateScenarioOptions({
@@ -553,6 +590,9 @@ export async function advanceScenarioRun(run, {
     decisionAdapter,
     prepareState: null,
   });
+  if (reflectionAdapter !== null && typeof reflectionAdapter !== "function") {
+    throw new TypeError("reflectionAdapter must be a function or null");
+  }
   if (!Number.isInteger(run.completedDays) || run.completedDays < 0 || run.completedDays > run.days) {
     throw new RangeError("scenario run has an invalid completed day");
   }
@@ -568,7 +608,13 @@ export async function advanceScenarioRun(run, {
   const ticks = (throughDay - run.completedDays) * DAY_MINUTES / run.tickMinutes;
 
   for (let tick = 0; tick < ticks; tick += 1) {
-    state = await advanceTown(state, { minutes: run.tickMinutes, decisionAdapter });
+    state = await advanceTown(state, {
+      minutes: run.tickMinutes,
+      decisionAdapter,
+      reflectionAdapter,
+      reflectionPolicy,
+      wallClock,
+    });
     updateExtremes(extremes, state);
     const completedDays = run.completedDays + ((tick + 1) * run.tickMinutes) / DAY_MINUTES;
     while (checkpointIndex < run.checkpointDays.length && run.checkpointDays[checkpointIndex] <= completedDays) {
@@ -610,6 +656,9 @@ export async function runScenario({
   tickMinutes = DAY_MINUTES,
   seedData = townSeed,
   decisionAdapter = scriptedObligationPlan,
+  reflectionAdapter = null,
+  reflectionPolicy = null,
+  wallClock = new Date(),
   prepareState = null,
 } = {}) {
   const run = await createScenarioRun({
@@ -621,7 +670,13 @@ export async function runScenario({
     seedData,
     prepareState,
   });
-  const completed = await advanceScenarioRun(run, { throughDay: days, decisionAdapter });
+  const completed = await advanceScenarioRun(run, {
+    throughDay: days,
+    decisionAdapter,
+    reflectionAdapter,
+    reflectionPolicy,
+    wallClock,
+  });
   return scenarioRunResult(completed);
 }
 

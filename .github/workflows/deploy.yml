@@ -64,6 +64,22 @@ jobs:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
         run: npm run wait:evaluation -- --url "$DEPLOYMENT_URL"
 
+      - name: Run bounded live reflection evaluation
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          REFLECTION_LIVE: "true"
+          REFLECTION_DAYS: "30"
+          REFLECTION_INTERVAL_DAYS: "24"
+        run: npm run evaluate:reflection -- --live --days 30 --interval 24 | tee reflection-evaluation.json
+
+      - name: Upload reflection evaluation report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: reflection-evaluation
+          path: reflection-evaluation.json
+          if-no-files-found: ignore
+
   deploy-production:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.environment == 'production' }}
     needs: test

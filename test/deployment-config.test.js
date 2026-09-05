@@ -25,6 +25,9 @@ test("main deploys isolated staging automatically while production stays manual"
   assert.match(workflow, /deploy-staging:[\s\S]*github\.event_name == 'push'/);
   assert.match(workflow, /deploy-production:[\s\S]*github\.event_name == 'workflow_dispatch'[\s\S]*inputs\.environment == 'production'/);
   assert.match(workflow, /deploy --env staging/);
+  assert.match(workflow, /Run bounded live reflection evaluation/);
+  assert.match(workflow, /REFLECTION_LIVE: "true"/);
+  assert.match(workflow, /upload-artifact@v4/);
 });
 
 test("a configured environment cannot masquerade as an ephemeral town without TOWN", async () => {

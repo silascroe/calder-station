@@ -16,6 +16,13 @@ import {
 import { normalizeRelationship } from "./relationship-dynamics.js";
 import { resolveSocialIntentions } from "./social.js";
 import { schedulePlanActions } from "./travel.js";
+import {
+  applyReflection,
+  ensureReflectionSchedule,
+  normalizeReflectionPolicy,
+  reflectionIsDue,
+  validateReflection,
+} from "./reflections.js";
 
 const MINUTE_MS = 60 * 1000;
 const HOUR_MINUTES = 60;
@@ -113,6 +120,14 @@ function defaultStats() {
     modelCompletionTokens: 0,
     modelPromptCacheHitTokens: 0,
     modelPromptCacheMissTokens: 0,
+    reflectionCount: 0,
+    reflectionModelCalls: 0,
+    reflectionAttempts: 0,
+    reflectionFallbacks: 0,
+    reflectionPromptTokens: 0,
+    reflectionCompletionTokens: 0,
+    reflectionPromptCacheHitTokens: 0,
+    reflectionPromptCacheMissTokens: 0,
     eventCount: 0,
     encounterCount: 0,
     obligationCreatedCount: 0,
@@ -163,8 +178,10 @@ function appendEvent(state, {
   if (action) event.action = action;
   state.events.push(event);
   state.stats.eventCount = (state.stats.eventCount ?? 0) + 1;
-  const personalTurningPoint = event.source === "model"
+  const personalTurningPoint = (event.source === "model" && event.type === "obligation")
     || event.type === "model-fallback"
+    || event.type === "reflection"
+    || event.type === "reflection-fallback"
     || (event.type === "obligation" && (event.relationshipDelta ?? 0) < 0)
     || (event.type === "action-interrupted" && Boolean(event.obligationId));
   if (personalTurningPoint) {
@@ -286,6 +303,27 @@ function normalizeRuntimeState(state) {
     resident.lastEncounterAt ??= null;
     resident.lastEncounterWithId ??= null;
     resident.socialCount ??= 0;
+    resident.reflection = resident.reflection && typeof resident.reflection === "object"
+      ? {
+        version: resident.reflection.version ?? 1,
+        lastReflectedAt: resident.reflection.lastReflectedAt ?? null,
+        nextReflectionAt: resident.reflection.nextReflectionAt ?? null,
+        staggerDays: resident.reflection.staggerDays ?? 0,
+        focusTargetId: resident.reflection.focusTargetId ?? null,
+        note: resident.reflection.note ?? null,
+        source: resident.reflection.source ?? null,
+        model: resident.reflection.model ?? null,
+      }
+      : {
+        version: 1,
+        lastReflectedAt: null,
+        nextReflectionAt: null,
+        staggerDays: 0,
+        focusTargetId: null,
+        note: null,
+        source: null,
+        model: null,
+      };
     resident.turningPoints = Array.isArray(resident.turningPoints) ? resident.turningPoints : [];
     resident.turningPoints = resident.turningPoints.slice(0, MAX_RESIDENT_TURNING_POINTS);
   }
@@ -418,6 +456,102 @@ function recordPlanTelemetry(state, resident, plan, planAt) {
   }
 }
 
+function reflectionTelemetryFor(reflection) {
+  const telemetry = reflection?.modelTelemetry;
+  const promptTokens = telemetry && Number.isSafeInteger(telemetry.promptTokens) && telemetry.promptTokens >= 0
+    ? telemetry.promptTokens
+    : 0;
+  const completionTokens = telemetry && Number.isSafeInteger(telemetry.completionTokens) && telemetry.completionTokens >= 0
+    ? telemetry.completionTokens
+    : 0;
+  return { telemetry, promptTokens, completionTokens };
+}
+
+function recordReflectionTelemetry(state, reflection) {
+  const { telemetry, promptTokens, completionTokens } = reflectionTelemetryFor(reflection);
+  if (!telemetry?.attempted) return;
+  state.stats.reflectionAttempts += 1;
+  state.stats.reflectionPromptTokens += promptTokens;
+  state.stats.reflectionCompletionTokens += completionTokens;
+  state.stats.reflectionPromptCacheHitTokens += Number.isSafeInteger(telemetry.promptCacheHitTokens)
+    ? telemetry.promptCacheHitTokens
+    : 0;
+  state.stats.reflectionPromptCacheMissTokens += Number.isSafeInteger(telemetry.promptCacheMissTokens)
+    ? telemetry.promptCacheMissTokens
+    : 0;
+  if (telemetry.fallback) state.stats.reflectionFallbacks += 1;
+}
+
+function reflectionEvent(state, resident, reflection, at, source, reason) {
+  state.stats.reflectionCount += 1;
+  if (source === "model") state.stats.reflectionModelCalls += 1;
+  const target = reflection.focusTargetId
+    ? state.residents.find(({ id }) => id === reflection.focusTargetId)
+    : null;
+  appendEvent(state, {
+    at,
+    actorId: resident.id,
+    relatedActorId: target?.id ?? null,
+    locationId: resident.locationId,
+    type: source === "fallback" ? "reflection-fallback" : "reflection",
+    text: target ? `made time to keep ${target.name} in mind` : "took stock of what deserves attention next",
+    source: source === "model"
+      ? "reflection-model"
+      : source === "fallback"
+        ? "reflection-fallback"
+        : "reflection-scripted",
+    reason: reason ?? reflection.note,
+  });
+}
+
+async function executeReflection(state, resident, reflectionAdapter, reflectionPolicy, planAt, wallClock) {
+  if (typeof reflectionAdapter !== "function") return;
+  const policy = normalizeReflectionPolicy(reflectionPolicy);
+  if (policy.mode === "disabled") return;
+  if (policy.residentIds && !policy.residentIds.includes(resident.id)) return;
+  ensureReflectionSchedule(resident, state.startedAt, policy);
+  if (!reflectionIsDue(resident, planAt, policy)) return;
+
+  try {
+    const raw = await reflectionAdapter({
+      town: decisionSnapshot(state, planAt),
+      resident: { ...resident },
+      now: planAt,
+      policy,
+      wallClock,
+    });
+    const value = validateReflection(raw, { town: state, resident });
+    const source = raw.source === "model" ? "model" : "scripted";
+    applyReflection(resident, value, planAt, policy, {
+      town: state,
+      source,
+      model: raw.modelTelemetry?.model ?? null,
+    });
+    recordReflectionTelemetry(state, raw);
+    reflectionEvent(state, resident, value, planAt, source, value.note);
+  } catch (error) {
+    if (error?.telemetry?.skipped) return;
+    const fallback = {
+      focusTargetId: null,
+      note: "ordinary routines still deserve attention",
+      modelTelemetry: {
+        attempted: true,
+        fallback: true,
+        model: error?.telemetry?.model ?? null,
+        ...(error?.telemetry ?? {}),
+        errorCode: error?.code ?? "reflection_failed",
+      },
+    };
+    applyReflection(resident, fallback, planAt, policy, {
+      town: state,
+      source: "fallback",
+      model: fallback.modelTelemetry.model,
+    });
+    recordReflectionTelemetry(state, fallback);
+    reflectionEvent(state, resident, fallback, planAt, "fallback", fallback.modelTelemetry.errorCode);
+  }
+}
+
 function queueEntryFor(resident, plan, action, sequence, timing) {
   const obligationDecision = plan.obligationDecisions?.find(({ actionIndex }) => actionIndex === sequence)
     ?? (sequence === 0 ? plan.obligationDecision : null);
@@ -468,7 +602,14 @@ function queuePlanActions(state, resident, plan, planAt) {
   resident.nextActionAt = resident.actionQueue[0]?.scheduledAt ?? null;
 }
 
-async function executePlan(state, resident, decisionAdapter, planAt) {
+async function executePlan(
+  state,
+  resident,
+  decisionAdapter,
+  planAt,
+  { reflectionAdapter, reflectionPolicy, wallClock } = {},
+) {
+  await executeReflection(state, resident, reflectionAdapter, reflectionPolicy, planAt, wallClock);
   const competingObligationCount = state.obligations.filter((obligation) => (
     obligation.ownerId === resident.id && obligation.status === "open"
   )).length;
@@ -694,6 +835,16 @@ function residentStateFromSeed(state, residentSeed, scheduledAfter, ids, status 
     lastEncounterAt: null,
     lastEncounterWithId: null,
     socialCount: 0,
+    reflection: {
+      version: 1,
+      lastReflectedAt: null,
+      nextReflectionAt: null,
+      staggerDays: 0,
+      focusTargetId: null,
+      note: null,
+      source: null,
+      model: null,
+    },
     turningPoints: [],
   };
   resident.nextPlanAt = nextRoutineDecision(state, resident.id, scheduledAfter, ids).toISOString();
@@ -789,6 +940,9 @@ function chooseDueWork(state, to) {
 export async function advanceTown(state, {
   minutes = DEFAULT_TICK_MINUTES,
   decisionAdapter = scriptedObligationPlan,
+  reflectionAdapter = null,
+  reflectionPolicy = null,
+  wallClock = new Date(),
 } = {}) {
   if (!Number.isInteger(minutes) || minutes <= 0 || minutes > 24 * HOUR_MINUTES) {
     throw new RangeError("minutes must be an integer between 1 and 1440");
@@ -796,6 +950,12 @@ export async function advanceTown(state, {
   if (typeof decisionAdapter !== "function") {
     throw new TypeError("decisionAdapter must be a function");
   }
+  if (reflectionAdapter !== null && typeof reflectionAdapter !== "function") {
+    throw new TypeError("reflectionAdapter must be a function or null");
+  }
+  const normalizedReflectionPolicy = normalizeReflectionPolicy(reflectionPolicy);
+  const effectiveWallClock = wallClock instanceof Date ? new Date(wallClock) : new Date(wallClock);
+  if (Number.isNaN(effectiveWallClock.getTime())) throw new TypeError("wallClock must be a valid date");
 
   const next = normalizeRuntimeState(cloneTown(state));
   const from = asDate(next.now);
@@ -816,7 +976,11 @@ export async function advanceTown(state, {
     advanceCausalState(next, effectiveAt);
 
     if (work.kind === "plan") {
-      await executePlan(next, work.resident, decisionAdapter, effectiveAt);
+      await executePlan(next, work.resident, decisionAdapter, effectiveAt, {
+        reflectionAdapter,
+        reflectionPolicy: normalizedReflectionPolicy,
+        wallClock: effectiveWallClock,
+      });
     } else {
       executeAction(next, work.resident, work.resident.actionQueue[0], effectiveAt);
     }
@@ -843,6 +1007,7 @@ export async function advanceTown(state, {
 export function reconcileTownWithSeed(state, { seedData = townSeed } = {}) {
   const runtimeBackfillNeeded = !state.civicIncidents
     || (state.residents ?? []).some((resident) => !Array.isArray(resident.turningPoints))
+    || (state.residents ?? []).some((resident) => !resident.reflection || typeof resident.reflection !== "object")
     || (state.relationships ?? []).some((relationship) => (
       relationship.baselineStrength === undefined
       || relationship.tension === undefined

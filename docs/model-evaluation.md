@@ -96,3 +96,22 @@ The evaluation Durable Object now records each assisted provider decision in a r
 V11 changed only the evaluation revision so the recovery-aware path would execute against a fresh staging run. GitHub Actions run `33460394401` deployed the Worker and passed the persistent staging smoke test before the evaluator completed at 02:15 UTC on 2026-09-01. The live assisted phase made one real `deepseek-v4-flash` request: the response was valid, with zero fallbacks and zero cost skips, 1,967 prompt tokens (1,920 cache-hit and 47 cache-miss), 45 completion tokens, and an estimated `$0.00010696` spend at the observed peak-window time. The model again selected Amos's urgent route report and explicitly accepted Jamie's late notice.
 
 The assisted season matched the scripted baseline at Days 1, 7, 30, and 90: both ended with 7,286 events, 113 fulfilled and 7 broken obligations, and the same relationship snapshots. All reported divergence fields were zero. This is useful operational evidence that the ledger-enabled path works in the real Durable Object, not evidence that broader model participation is valuable; the model still made no downstream difference that a competent deterministic rule could not have made. The failure-injection and outcome-unknown recovery behaviors remain covered by local tests because deliberately crashing the live paid evaluator would only destroy useful staging state.
+
+## `sal-reflection-slice-v1-2026-09-01`
+
+This is an opt-in staging slice for the next experiment, not a production
+feature. `src/reflections.js` adds a configurable simulated-day cadence and one
+bounded higher-order field, `{focusTargetId, note}`. A focus can only name a
+recorded relationship; deterministic planning turns it into at most one visit
+inside the existing action queue, and ordinary co-location and availability
+rules decide whether a conversation occurs. Provider failure records a
+null-focus fallback and does not stop the town.
+
+`src/reflection-evaluation.js` runs a tiny, two-resident baseline/assisted A/B
+fixture through the same authoritative engine. The local default adapter is
+deterministic and free. The staging deployment workflow now runs one explicit
+30-day evaluation with `createDeepSeekReflection`, bypassing peak pricing only
+for this deliberate experiment, and uploads its JSON report as the
+`reflection-evaluation` artifact. It records validity, cache-aware cost,
+fallbacks, and focal relationship/event deltas. Production remains untouched;
+the reflection policy is still disabled in the live Worker.

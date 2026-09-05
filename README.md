@@ -79,6 +79,14 @@ npm run scenario -- --days 1,7,30,90
 npm run scenario -- --days 90 --seed another-replay --json
 ```
 
+The staging-only reflection slice can be replayed without a provider key. It
+uses one resident in a tiny fixture and compares a deterministic baseline with
+one bounded focus field through the same engine:
+
+```sh
+npm run evaluate:reflection -- --days 90 --interval 24
+```
+
 Reports track event volume, resident plans and actions, relationship changes, commitment outcomes and generations, activity by place, model attempts and fallbacks, token use, need ranges, queue state, and invariant failures. They also measure exact event-template concentration, repeated daily action patterns, relationship saturation, conversation coverage versus broader causal relationship activity, per-resident meaningful history, and participation by place. Runs are seedable and replayable so rule changes can be compared without inventing a second fake simulation for testing.
 
 The public resident register keeps recent town records separate from a capped personal turning-point list. Model choices, fallbacks, broken promises, and obligation interruptions therefore remain legible after ordinary town traffic has pushed their source event outside the newest 200 journal entries.
@@ -162,6 +170,9 @@ Persistent time follows a pause policy. One completed alarm advances one simulat
 | `src/deepseek-planner.js` | bounded DeepSeek decision adapter and failure handling |
 | `src/hybrid-planner.js` | shared scripted/model selection, pricing guard, and fallback |
 | `src/model-evaluation.js` | fixed paid evaluation matrix, resumable same-engine season evaluation, and cost report |
+| `src/reflections.js` | configurable reflection cadence, bounded focus validation, and durable resident reflection state |
+| `src/deepseek-reflection.js` | optional bounded DeepSeek reflection adapter and telemetry |
+| `src/reflection-evaluation.js` | staging-only tiny-cohort reflection A/B harness |
 | `src/obligations.js` | commitment resolution, expiry, and bounded renewal |
 | `src/social.js` | deterministic co-location and relationship effects |
 | `src/scenario-runner.js` | long-horizon diagnostics, invariant checks, and resumable run chunks |

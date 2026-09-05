@@ -16,6 +16,8 @@ const CONSEQUENTIAL_EVENT_TYPES = new Set([
   "encounter",
   "action-interrupted",
   "model-fallback",
+  "reflection",
+  "reflection-fallback",
 ]);
 
 function escapeHtml(value) {
@@ -120,6 +122,8 @@ function eventKind(event) {
     encounter: "encounter",
     "action-interrupted": "interruption",
     "model-fallback": "fallback",
+    reflection: "reflection",
+    "reflection-fallback": "reflection fallback",
   }[event?.type] ?? "ordinary record";
 }
 
@@ -128,7 +132,7 @@ function eventContext(event) {
   const obligation = event?.obligationId ? obligationById(event.obligationId) : null;
   const parent = obligation?.parentObligationId ? obligationById(obligation.parentObligationId) : null;
   if (parent) details.push(`Follows ${parent.title}`);
-  if (event?.type === "obligation" && event.reason) details.push(event.reason);
+  if ((event?.type === "obligation" || event?.type === "reflection" || event?.type === "reflection-fallback") && event.reason) details.push(event.reason);
   return details.join(" · ");
 }
 

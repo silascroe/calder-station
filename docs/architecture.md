@@ -63,6 +63,7 @@ Each report includes:
 - relationship changes and largest gains/losses;
 - commitments created, fulfilled, delayed, broken, open, and highest generation;
 - model attempts, successful calls, fallbacks, cost skips, and token totals;
+- reflection attempts, applied notes, fallbacks, and provider token/cache totals when an opt-in reflection adapter is supplied;
 - min/max energy and hunger over the whole run;
 - duplicate IDs, invalid references, overdue open commitments, due queue entries, need bounds, and obvious rest/no-activity loops.
 - repeated per-resident daily patterns, event-template concentration, relationship direction/saturation, social encounter coverage, any-causal-activity coverage, personal meaningful-history counts, and resident participation by place.
@@ -86,6 +87,27 @@ Staging has a fixed evaluation revision and a server-side quarter-hour Cron trig
 The staging deployment polls that read-only report for up to 45 minutes, enough for the normal two-phase run and a bounded recovery tick. Terminal failure or a stranded paid lease makes the deployment red; completion prints the bounded report into the GitHub Actions record. This is observation, not a second trigger, so deployment retries cannot initiate extra provider calls for the same revision.
 
 Routine mechanics remain scripted. More model-eligible incident classes should wait until the first one is easy to explain from the event history and long-horizon reports.
+
+## Reflection slice (staging only)
+
+The first higher-order reflection experiment is deliberately narrower than the
+existing commitment evaluator. `src/reflections.js` defines a configurable
+cadence (`disabled`, `accelerated`, or `fast_test`) and one bounded field:
+`{focusTargetId, note}`. A focus must name an existing relationship and the note
+is capped at 160 characters. The engine records the reflection, then lets the
+ordinary planner use that focus to reserve one legal visit in its existing
+finite queue. A target is never moved or guaranteed to be present; normal
+co-location, wakefulness, travel, and daily-encounter rules still decide the
+outcome. Provider failure records a null-focus fallback and continues normally.
+
+`src/deepseek-reflection.js` supplies the optional DeepSeek adapter with compact
+resident, relationship, obligation, and recent-event context. It cannot author
+actions, destinations, timing, or consequences. `src/reflection-evaluation.js`
+provides a tiny two-resident staging fixture and runs baseline and assisted arms
+through the same `runScenario` engine. The default CLI mode is deterministic and
+free; the staging workflow explicitly runs the same harness once with the live
+DeepSeek adapter and uploads the bounded JSON report. The slice is never wired
+into the production alarm or the deployed V11 commitment revision.
 
 ## Viewer
 

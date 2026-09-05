@@ -494,10 +494,12 @@ test("an assisted evaluation reuses a completed provider decision after snapshot
   });
   const run = await createModelSeasonRun({ days: 1 });
   run.evaluationPhase = "assisted";
-  town.writeEvaluationRun(run, "evaluation-test");
   const originalWrite = town.writeEvaluationRun.bind(town);
-  town.writeEvaluationRun = () => {
-    throw new Error("simulated snapshot write interruption");
+  let writes = 0;
+  town.writeEvaluationRun = (next, revision) => {
+    writes += 1;
+    if (writes === 2) throw new Error("simulated snapshot write interruption");
+    return originalWrite(next, revision);
   };
 
   await assert.rejects(
@@ -510,6 +512,9 @@ test("an assisted evaluation reuses a completed provider decision after snapshot
     }),
     /simulated snapshot write interruption/,
   );
+
+  assert.equal(writes, 2);
+  assert.equal(town.readEvaluationRun("evaluation-test")?.completedDays, 0);
 
   town.writeEvaluationRun = originalWrite;
   const replay = await town.evaluationStep({
